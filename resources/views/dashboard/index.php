@@ -50,6 +50,7 @@ $isAdmin = in_array(strtoupper($perfilRaw), ['SUPER_ADMIN', 'ADMIN'], true);
                 <a class="btn" href="/monitoramento">Perfis de monitoramento</a>
                 <?php if ($isAdmin): ?>
                     <a class="btn" href="/fontes">Fontes de coleta</a>
+                    <a class="btn" href="/admin/coletas">Coletas</a>
                 <?php endif; ?>
                 <a class="btn" href="/assinatura/status">Status da assinatura</a>
                 <a class="btn" href="/logout">Sair</a>

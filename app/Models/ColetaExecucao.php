@@ -8,6 +8,8 @@ class ColetaExecucao
 {
     public int $id = 0;
     public int $fonteId = 0;
+    public ?string $fonteNome = null;
+    public ?string $fonteCodigo = null;
     public string $iniciadoEm = '';
     public ?string $finalizadoEm = null;
     public string $status = 'PROCESSANDO';
@@ -25,6 +27,8 @@ class ColetaExecucao
         $execucao = new self();
         $execucao->id = (int) ($data['id'] ?? 0);
         $execucao->fonteId = (int) ($data['fonte_id'] ?? 0);
+        $execucao->fonteNome = isset($data['fonte_nome']) ? (string) $data['fonte_nome'] : null;
+        $execucao->fonteCodigo = isset($data['fonte_codigo']) ? (string) $data['fonte_codigo'] : null;
         $execucao->iniciadoEm = (string) ($data['iniciado_em'] ?? '');
         $execucao->finalizadoEm = isset($data['finalizado_em']) ? (string) $data['finalizado_em'] : null;
         $execucao->status = (string) ($data['status'] ?? 'PROCESSANDO');

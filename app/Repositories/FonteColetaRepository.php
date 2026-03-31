@@ -123,6 +123,29 @@ class FonteColetaRepository
         return FonteColeta::fromArray($row);
     }
 
+    /**
+     * @return array<int, FonteColeta>
+     */
+    public function listAtivas(): array
+    {
+        $stmt = $this->pdo->query(
+            'SELECT *
+            FROM fontes_coleta
+            WHERE ativa = 1
+            ORDER BY id ASC'
+        );
+
+        $rows = $stmt->fetchAll();
+        if (!is_array($rows)) {
+            return [];
+        }
+
+        return array_map(
+            static fn(array $row): FonteColeta => FonteColeta::fromArray($row),
+            $rows
+        );
+    }
+
     public function create(array $data): FonteColeta
     {
         $stmt = $this->pdo->prepare(
@@ -205,6 +228,18 @@ class FonteColetaRepository
             'id' => $id,
             'ativa' => $ativa ? 1 : 0,
         ]);
+
+        return $stmt->rowCount() > 0;
+    }
+
+    public function touchUltimaExecucao(int $id): bool
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE fontes_coleta
+            SET ultima_execucao_em = NOW(), atualizado_em = NOW()
+            WHERE id = :id'
+        );
+        $stmt->execute(['id' => $id]);
 
         return $stmt->rowCount() > 0;
     }

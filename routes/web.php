@@ -121,5 +121,26 @@ $router->post('/fontes/{id}/toggle', 'FonteController@toggle', [
     AdminMiddleware::class,
 ]);
 
+$router->get('/admin/coletas', 'ColetaController@index', [
+    AuthMiddleware::class,
+    AdminMiddleware::class,
+]);
+$router->get('/admin/coletas/{id}', 'ColetaController@show', [
+    AuthMiddleware::class,
+    AdminMiddleware::class,
+]);
+$router->post('/admin/coletas/pncp', 'ColetaController@executarPncp', [
+    AuthMiddleware::class,
+    AdminMiddleware::class,
+]);
+$router->post('/admin/coletas/comprasgov', 'ColetaController@executarComprasGov', [
+    AuthMiddleware::class,
+    AdminMiddleware::class,
+]);
+$router->post('/admin/coletas/licitacoese', 'ColetaController@executarLicitacoesE', [
+    AuthMiddleware::class,
+    AdminMiddleware::class,
+]);
+
 $router->get('/logout', 'AuthController@showLogout', [AuthMiddleware::class]);
 $router->post('/logout', 'AuthController@logout', [AuthMiddleware::class]);
