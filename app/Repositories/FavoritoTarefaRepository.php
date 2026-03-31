@@ -134,15 +134,16 @@ class FavoritoTarefaRepository
         $stmt = $this->pdo->prepare(
             'UPDATE favorito_tarefas
             SET
-                status = :status,
-                concluida_em = CASE WHEN :status = \'CONCLUIDA\' THEN NOW() ELSE NULL END,
+                status = :status_set,
+                concluida_em = CASE WHEN :status_check = \'CONCLUIDA\' THEN NOW() ELSE NULL END,
                 atualizado_em = NOW()
             WHERE id = :id
               AND favorito_id = :favorito_id
               AND empresa_id = :empresa_id'
         );
         $stmt->execute([
-            'status' => $status,
+            'status_set' => $status,
+            'status_check' => $status,
             'id' => $tarefaId,
             'favorito_id' => $favoritoId,
             'empresa_id' => $empresaId,
