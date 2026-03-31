@@ -1,0 +1,95 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Core\Request;
+use App\Core\Response;
+use App\Middlewares\AuthMiddleware;
+use App\Middlewares\TenantMiddleware;
+use App\Middlewares\AssinaturaMiddleware;
+
+$router->get('/', function (Request $request, Response $response): void {
+    if ($request->session('auth.user_id') !== null) {
+        $response->redirect('/dashboard');
+        return;
+    }
+
+    $response->redirect('/login');
+});
+
+$router->get('/login', 'AuthController@showLoginForm');
+$router->post('/login', 'AuthController@login');
+
+$router->get('/dashboard', 'DashboardController@index', [
+    AuthMiddleware::class,
+    TenantMiddleware::class,
+    AssinaturaMiddleware::class,
+]);
+
+$router->get('/assinatura/status', 'AssinaturaController@status', [
+    AuthMiddleware::class,
+    TenantMiddleware::class,
+]);
+$router->post('/assinatura/ativar-teste', 'AssinaturaController@ativarTeste', [
+    AuthMiddleware::class,
+    TenantMiddleware::class,
+]);
+
+$router->get('/monitoramento', 'PerfilMonitoramentoController@index', [
+    AuthMiddleware::class,
+    TenantMiddleware::class,
+    AssinaturaMiddleware::class,
+]);
+$router->get('/monitoramento/novo', 'PerfilMonitoramentoController@create', [
+    AuthMiddleware::class,
+    TenantMiddleware::class,
+    AssinaturaMiddleware::class,
+]);
+$router->post('/monitoramento', 'PerfilMonitoramentoController@store', [
+    AuthMiddleware::class,
+    TenantMiddleware::class,
+    AssinaturaMiddleware::class,
+]);
+$router->get('/monitoramento/{id}/editar', 'PerfilMonitoramentoController@edit', [
+    AuthMiddleware::class,
+    TenantMiddleware::class,
+    AssinaturaMiddleware::class,
+]);
+$router->post('/monitoramento/{id}', 'PerfilMonitoramentoController@update', [
+    AuthMiddleware::class,
+    TenantMiddleware::class,
+    AssinaturaMiddleware::class,
+]);
+$router->post('/monitoramento/{id}/toggle', 'PerfilMonitoramentoController@toggle', [
+    AuthMiddleware::class,
+    TenantMiddleware::class,
+    AssinaturaMiddleware::class,
+]);
+$router->post('/monitoramento/{id}/delete', 'PerfilMonitoramentoController@delete', [
+    AuthMiddleware::class,
+    TenantMiddleware::class,
+    AssinaturaMiddleware::class,
+]);
+$router->post('/monitoramento/{id}/palavras', 'PalavraChaveController@store', [
+    AuthMiddleware::class,
+    TenantMiddleware::class,
+    AssinaturaMiddleware::class,
+]);
+$router->post('/monitoramento/{id}/palavras/{palavraId}', 'PalavraChaveController@update', [
+    AuthMiddleware::class,
+    TenantMiddleware::class,
+    AssinaturaMiddleware::class,
+]);
+$router->post('/monitoramento/{id}/palavras/{palavraId}/toggle', 'PalavraChaveController@toggle', [
+    AuthMiddleware::class,
+    TenantMiddleware::class,
+    AssinaturaMiddleware::class,
+]);
+$router->post('/monitoramento/{id}/palavras/{palavraId}/delete', 'PalavraChaveController@delete', [
+    AuthMiddleware::class,
+    TenantMiddleware::class,
+    AssinaturaMiddleware::class,
+]);
+
+$router->get('/logout', 'AuthController@showLogout', [AuthMiddleware::class]);
+$router->post('/logout', 'AuthController@logout', [AuthMiddleware::class]);

@@ -1,0 +1,23 @@
+{
+    "name": "paulafernanda/saas-editais",
+    "description": "SaaS de Monitoramento Inteligente de Editais",
+    "type": "project",
+    "require": {
+        "php": "^8.1",
+        "ext-pdo": "*"
+    },
+    "autoload": {
+        "psr-4": {
+            "App\\": "app/"
+        }
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "sort-packages": true
+    },
+    "scripts": {
+        "post-autoload-dump": [
+            "@php -r \"echo 'Autoload atualizado com sucesso.' . PHP_EOL;\""
+        ]
+    }
+}

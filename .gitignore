@@ -1,0 +1,32 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.crt
+
+# Dependency and build artifacts
+/vendor/
+/node_modules/
+
+# Logs, cache and runtime artifacts
+/storage/logs/*.log
+/storage/cache/
+/storage/tmp/
+/storage/*.tmp
+
+# Local tooling/output
+composer.phar
+cookies*.txt
+delivery_output.md
+*.local
+*.bak
+*.swp
+
+# IDE/OS
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
