@@ -281,8 +281,12 @@ class ColetaService
                 'data_abertura' => date('Y-m-d 08:30:00', strtotime('+' . ($i % 4) . ' day')),
                 'data_encerramento' => date('Y-m-d 18:00:00', strtotime('+' . (($i % 4) + 6) . ' day')),
                 'situacao' => 'PUBLICADO',
-                'link_detalhe' => 'https://example.local/' . strtolower($codigoFonte) . '/detalhe/' . $seq,
-                'link_edital' => 'https://example.local/' . strtolower($codigoFonte) . '/arquivo/' . $seq,
+                'link_detalhe' => 'https://www.google.com/search?q=' . rawurlencode(
+                    $codigoFonte . ' ' . date('Y') . ' ' . $seq . ' detalhes edital'
+                ),
+                'link_edital' => 'https://www.google.com/search?q=' . rawurlencode(
+                    $codigoFonte . ' ' . date('Y') . ' ' . $seq . ' arquivo edital pdf'
+                ),
             ];
         }
 
@@ -327,4 +331,3 @@ class ColetaService
         );
     }
 }
-

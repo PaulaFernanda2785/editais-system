@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Helpers\ExternalLinkHelper;
 use App\Models\PalavraChave;
 use App\Models\PerfilMonitoramento;
 use App\Repositories\CorrespondenciaRepository;
@@ -55,6 +56,11 @@ class CorrespondenciaService
         ];
 
         $resultado = $this->correspondenciaRepository->listByEmpresa($empresaId, $filters, $page, $perPage, $sort);
+        if (isset($resultado['items']) && is_array($resultado['items'])) {
+            foreach ($resultado['items'] as $item) {
+                $this->resolverLinksCorrespondencia($item);
+            }
+        }
         $resultado['sort'] = $sort;
         $resultado['filters'] = $filters;
         $resultado['perfis'] = $this->perfilRepository->listByEmpresa($empresaId);
@@ -71,6 +77,8 @@ class CorrespondenciaService
         if ($item === null) {
             return null;
         }
+
+        $this->resolverLinksCorrespondencia($item);
 
         return [
             'correspondencia' => $item,
@@ -243,5 +251,24 @@ class CorrespondenciaService
     {
         $permitidos = ['score_desc', 'score_asc', 'criado_em_asc', 'edital_data_desc', 'edital_data_asc'];
         return in_array($sort, $permitidos, true) ? $sort : 'score_desc';
+    }
+
+    private function resolverLinksCorrespondencia(object $item): void
+    {
+        $item->editalLinkDetalhe = ExternalLinkHelper::resolveForDetail(
+            isset($item->editalLinkDetalhe) ? (string) $item->editalLinkDetalhe : null,
+            isset($item->editalNumero) ? (string) $item->editalNumero : null,
+            isset($item->editalOrgaoNome) ? (string) $item->editalOrgaoNome : null,
+            null,
+            'detalhe'
+        );
+
+        $item->editalLinkEdital = ExternalLinkHelper::resolveForDetail(
+            isset($item->editalLinkEdital) ? (string) $item->editalLinkEdital : null,
+            isset($item->editalNumero) ? (string) $item->editalNumero : null,
+            isset($item->editalOrgaoNome) ? (string) $item->editalOrgaoNome : null,
+            null,
+            'edital'
+        );
     }
 }

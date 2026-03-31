@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Helpers\ExternalLinkHelper;
 use App\Repositories\DocumentoEditalRepository;
 use App\Repositories\EditalRepository;
 use App\Repositories\FonteColetaRepository;
@@ -34,6 +35,21 @@ class EditalService
             return null;
         }
 
+        $edital->linkDetalhe = ExternalLinkHelper::resolveForDetail(
+            $edital->linkDetalhe,
+            $edital->numeroEdital,
+            $edital->orgaoNome,
+            $edital->codigoFonte,
+            'detalhe'
+        );
+        $edital->linkEdital = ExternalLinkHelper::resolveForDetail(
+            $edital->linkEdital,
+            $edital->numeroEdital,
+            $edital->orgaoNome,
+            $edital->codigoFonte,
+            'edital'
+        );
+
         $fonte = $this->fonteRepository->findById($edital->fonteId);
         $documentos = $this->documentoRepository->listByEdital($editalId);
 
@@ -44,4 +60,3 @@ class EditalService
         ];
     }
 }
-
