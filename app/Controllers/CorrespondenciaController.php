@@ -8,14 +8,20 @@ use App\Core\Controller;
 use App\Core\Request;
 use App\Core\Response;
 use App\Services\CorrespondenciaService;
+use App\Services\FavoritoService;
 
 class CorrespondenciaController extends Controller
 {
     private CorrespondenciaService $correspondenciaService;
+    private FavoritoService $favoritoService;
 
-    public function __construct(?CorrespondenciaService $correspondenciaService = null)
+    public function __construct(
+        ?CorrespondenciaService $correspondenciaService = null,
+        ?FavoritoService $favoritoService = null
+    )
     {
         $this->correspondenciaService = $correspondenciaService ?? new CorrespondenciaService();
+        $this->favoritoService = $favoritoService ?? new FavoritoService();
     }
 
     public function index(Request $request, Response $response): void
@@ -75,5 +81,35 @@ class CorrespondenciaController extends Controller
         $request->setSession('correspondencias.message', $result['mensagem'] ?? null);
         $response->redirect('/oportunidades');
     }
-}
 
+    public function decidir(Request $request, Response $response): void
+    {
+        $empresaId = (int) $request->session('auth.empresa_id', 0);
+        $usuarioId = (int) $request->session('auth.user_id', 0);
+        $correspondenciaId = (int) $request->routeParam('id', 0);
+
+        $resultado = $this->favoritoService->decidirPorOportunidade(
+            $empresaId,
+            $usuarioId > 0 ? $usuarioId : null,
+            $correspondenciaId,
+            (string) $request->input('status_acompanhamento', ''),
+            $request->input('observacao')
+        );
+
+        $request->setSession('correspondencias.message', $resultado['mensagem'] ?? null);
+
+        $abrirPipeline = filter_var($request->input('abrir_pipeline', false), FILTER_VALIDATE_BOOLEAN);
+        $favoritoId = isset($resultado['favorito_id']) ? (int) $resultado['favorito_id'] : 0;
+        if ($abrirPipeline && $favoritoId > 0) {
+            $response->redirect('/favoritos/' . $favoritoId);
+            return;
+        }
+
+        $redirectTo = trim((string) $request->input('redirect_to', '/oportunidades'));
+        if ($redirectTo === '' || !str_starts_with($redirectTo, '/')) {
+            $redirectTo = '/oportunidades';
+        }
+
+        $response->redirect($redirectTo);
+    }
+}

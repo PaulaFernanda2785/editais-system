@@ -167,12 +167,18 @@ class CorrespondenciaRepository
                 e.uf AS edital_uf,
                 e.modalidade AS edital_modalidade,
                 e.data_publicacao AS edital_data_publicacao,
+                e.data_encerramento AS edital_data_encerramento,
                 e.valor_estimado AS edital_valor_estimado,
                 e.link_detalhe AS edital_link_detalhe,
-                e.link_edital AS edital_link_edital
+                e.link_edital AS edital_link_edital,
+                f.id AS favorito_id,
+                f.status_acompanhamento AS favorito_status_acompanhamento,
+                f.observacao AS favorito_observacao,
+                f.atualizado_em AS favorito_atualizado_em
             FROM correspondencias c
             INNER JOIN editais e ON e.id = c.edital_id
             LEFT JOIN perfis_monitoramento pm ON pm.id = c.perfil_monitoramento_id
+            LEFT JOIN favoritos f ON f.empresa_id = c.empresa_id AND f.edital_id = c.edital_id
             ' . $whereSql . '
             ORDER BY ' . $orderBy . '
             LIMIT :limite OFFSET :offset'
@@ -212,12 +218,18 @@ class CorrespondenciaRepository
                 e.uf AS edital_uf,
                 e.modalidade AS edital_modalidade,
                 e.data_publicacao AS edital_data_publicacao,
+                e.data_encerramento AS edital_data_encerramento,
                 e.valor_estimado AS edital_valor_estimado,
                 e.link_detalhe AS edital_link_detalhe,
-                e.link_edital AS edital_link_edital
+                e.link_edital AS edital_link_edital,
+                f.id AS favorito_id,
+                f.status_acompanhamento AS favorito_status_acompanhamento,
+                f.observacao AS favorito_observacao,
+                f.atualizado_em AS favorito_atualizado_em
             FROM correspondencias c
             INNER JOIN editais e ON e.id = c.edital_id
             LEFT JOIN perfis_monitoramento pm ON pm.id = c.perfil_monitoramento_id
+            LEFT JOIN favoritos f ON f.empresa_id = c.empresa_id AND f.edital_id = c.edital_id
             WHERE c.id = :id
               AND c.empresa_id = :empresa_id
             LIMIT 1'
@@ -233,6 +245,15 @@ class CorrespondenciaRepository
         }
 
         return Correspondencia::fromArray($row);
+    }
+
+    public function countByEmpresa(int $empresaId): int
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT COUNT(*) FROM correspondencias WHERE empresa_id = :empresa_id'
+        );
+        $stmt->execute(['empresa_id' => $empresaId]);
+        return (int) $stmt->fetchColumn();
     }
 
     /**

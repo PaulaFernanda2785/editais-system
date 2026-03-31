@@ -6,6 +6,7 @@ $appName = isset($appName) ? (string) $appName : 'SaaS Editais';
 $auth = isset($auth) && is_array($auth) ? $auth : [];
 $tenant = isset($tenant) && is_array($tenant) ? $tenant : [];
 $assinatura = isset($assinatura) ? $assinatura : null;
+$resumo = isset($resumo) && is_array($resumo) ? $resumo : [];
 $adminMessage = isset($adminMessage) ? (string) $adminMessage : null;
 
 $nome = htmlspecialchars((string) ($auth['nome'] ?? 'Usuario'), ENT_QUOTES, 'UTF-8');
@@ -50,6 +51,7 @@ $isAdmin = in_array(strtoupper($perfilRaw), ['SUPER_ADMIN', 'ADMIN'], true);
                 <a class="btn" href="/editais">Catalogo de editais</a>
                 <a class="btn" href="/monitoramento">Perfis de monitoramento</a>
                 <a class="btn" href="/oportunidades">Oportunidades</a>
+                <a class="btn" href="/favoritos">Pipeline</a>
                 <?php if ($isAdmin): ?>
                     <a class="btn" href="/fontes">Fontes de coleta</a>
                     <a class="btn" href="/admin/coletas">Coletas</a>
@@ -93,6 +95,41 @@ $isAdmin = in_array(strtoupper($perfilRaw), ['SUPER_ADMIN', 'ADMIN'], true);
                     <p class="status-warn"><?= htmlspecialchars($statusAssinatura, ENT_QUOTES, 'UTF-8') ?></p>
                 <?php endif; ?>
                 <p>Validade: <?= htmlspecialchars((string) $fimAssinatura, ENT_QUOTES, 'UTF-8') ?></p>
+            </article>
+        </section>
+
+        <section class="grid" style="margin-top: 10px;">
+            <article class="card">
+                <h3>Oportunidades mapeadas</h3>
+                <p><?= (int) ($resumo['oportunidades_total'] ?? 0) ?></p>
+            </article>
+            <article class="card">
+                <h3>Itens em pipeline</h3>
+                <p><?= (int) ($resumo['pipeline_total'] ?? 0) ?></p>
+            </article>
+            <article class="card">
+                <h3>Em analise</h3>
+                <p><?= (int) ($resumo['em_analise'] ?? 0) ?></p>
+            </article>
+            <article class="card">
+                <h3>Em proposta</h3>
+                <p><?= (int) ($resumo['proposta'] ?? 0) ?></p>
+            </article>
+            <article class="card">
+                <h3>Descartados</h3>
+                <p><?= (int) ($resumo['descartado'] ?? 0) ?></p>
+            </article>
+            <article class="card">
+                <h3>Encerrados</h3>
+                <p><?= (int) ($resumo['encerrado'] ?? 0) ?></p>
+            </article>
+            <article class="card">
+                <h3>Taxa de decisao</h3>
+                <p><?= number_format((float) ($resumo['taxa_decisao'] ?? 0), 1, ',', '.') ?>%</p>
+            </article>
+            <article class="card">
+                <h3>Taxa de conclusao</h3>
+                <p><?= number_format((float) ($resumo['taxa_conclusao'] ?? 0), 1, ',', '.') ?>%</p>
             </article>
         </section>
     </div>

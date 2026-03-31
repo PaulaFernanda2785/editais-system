@@ -27,9 +27,15 @@ class Correspondencia
     public ?string $editalUf = null;
     public ?string $editalModalidade = null;
     public ?string $editalDataPublicacao = null;
+    public ?string $editalDataEncerramento = null;
     public ?float $editalValorEstimado = null;
     public ?string $editalLinkDetalhe = null;
     public ?string $editalLinkEdital = null;
+
+    public ?int $favoritoId = null;
+    public ?string $favoritoStatusAcompanhamento = null;
+    public ?string $favoritoObservacao = null;
+    public ?string $favoritoAtualizadoEm = null;
 
     public static function fromArray(array $data): self
     {
@@ -51,9 +57,16 @@ class Correspondencia
         $item->editalUf = isset($data['edital_uf']) ? (string) $data['edital_uf'] : null;
         $item->editalModalidade = isset($data['edital_modalidade']) ? (string) $data['edital_modalidade'] : null;
         $item->editalDataPublicacao = isset($data['edital_data_publicacao']) ? (string) $data['edital_data_publicacao'] : null;
+        $item->editalDataEncerramento = isset($data['edital_data_encerramento']) ? (string) $data['edital_data_encerramento'] : null;
         $item->editalValorEstimado = isset($data['edital_valor_estimado']) ? (float) $data['edital_valor_estimado'] : null;
         $item->editalLinkDetalhe = isset($data['edital_link_detalhe']) ? (string) $data['edital_link_detalhe'] : null;
         $item->editalLinkEdital = isset($data['edital_link_edital']) ? (string) $data['edital_link_edital'] : null;
+        $item->favoritoId = isset($data['favorito_id']) ? (int) $data['favorito_id'] : null;
+        $item->favoritoStatusAcompanhamento = isset($data['favorito_status_acompanhamento'])
+            ? (string) $data['favorito_status_acompanhamento']
+            : null;
+        $item->favoritoObservacao = isset($data['favorito_observacao']) ? (string) $data['favorito_observacao'] : null;
+        $item->favoritoAtualizadoEm = isset($data['favorito_atualizado_em']) ? (string) $data['favorito_atualizado_em'] : null;
 
         return $item;
     }
@@ -79,4 +92,3 @@ class Correspondencia
         return is_array($decoded) ? $decoded : null;
     }
 }
-

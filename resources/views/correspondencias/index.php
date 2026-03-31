@@ -40,6 +40,17 @@ $badgeClass = static function (string $nivel): string {
         default => 'badge-baixa',
     };
 };
+
+$pipelineBadgeClass = static function (?string $status): string {
+    return match (strtoupper((string) $status)) {
+        'EM_ANALISE' => 'badge-pipeline-analise',
+        'PROPOSTA' => 'badge-pipeline-proposta',
+        'DESCARTADO' => 'badge-pipeline-descartado',
+        'ENCERRADO' => 'badge-pipeline-encerrado',
+        'FAVORITO' => 'badge-pipeline-favorito',
+        default => 'badge-pipeline-nao-definido',
+    };
+};
 ?>
 <!doctype html>
 <html lang="pt-BR">
@@ -68,9 +79,18 @@ $badgeClass = static function (string $nivel): string {
         .badge-alta { background: #ffedd5; color: #9a3412; }
         .badge-media { background: #fef9c3; color: #854d0e; }
         .badge-baixa { background: #dcfce7; color: #166534; }
+        .badge-pipeline-favorito { background: #dbeafe; color: #1d4ed8; }
+        .badge-pipeline-analise { background: #ffedd5; color: #9a3412; }
+        .badge-pipeline-proposta { background: #dcfce7; color: #166534; }
+        .badge-pipeline-descartado { background: #fee2e2; color: #991b1b; }
+        .badge-pipeline-encerrado { background: #e5e7eb; color: #374151; }
+        .badge-pipeline-nao-definido { background: #f1f5f9; color: #475569; }
         .line { display: block; margin-bottom: 3px; }
         .inline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
         .input-limit { width: 110px; }
+        .quick-decision { margin-top: 8px; display: grid; grid-template-columns: 1fr auto; gap: 6px; }
+        .quick-decision select { min-width: 130px; }
+        .quick-decision button { white-space: nowrap; }
     </style>
 </head>
 <body>
@@ -84,6 +104,7 @@ $badgeClass = static function (string $nivel): string {
                 <a class="btn" href="/dashboard">Dashboard</a>
                 <a class="btn" href="/editais">Catalogo de editais</a>
                 <a class="btn" href="/monitoramento">Perfis</a>
+                <a class="btn" href="/favoritos">Pipeline</a>
                 <a class="btn" href="/logout">Sair</a>
             </div>
         </header>
@@ -177,11 +198,19 @@ $badgeClass = static function (string $nivel): string {
                             <th>Perfil</th>
                             <th>Publicacao</th>
                             <th>Valor</th>
+                            <th>Pipeline</th>
                             <th></th>
                         </tr>
                     </thead>
                     <tbody>
                     <?php foreach ($items as $item): ?>
+                        <?php
+                            $pipelineStatus = strtoupper((string) ($item->favoritoStatusAcompanhamento ?? ''));
+                            if ($pipelineStatus === '') {
+                                $pipelineStatus = 'NAO_DECIDIDO';
+                            }
+                            $redirectTo = (string) ($_SERVER['REQUEST_URI'] ?? '/oportunidades');
+                        ?>
                         <tr>
                             <td>#<?= (int) $item->id ?></td>
                             <td>
@@ -203,6 +232,27 @@ $badgeClass = static function (string $nivel): string {
                                     R$ <?= number_format($item->editalValorEstimado, 2, ',', '.') ?>
                                 <?php else: ?>
                                     -
+                                <?php endif; ?>
+                            </td>
+                            <td>
+                                <span class="badge <?= $pipelineBadgeClass($pipelineStatus) ?>">
+                                    <?= htmlspecialchars($pipelineStatus, ENT_QUOTES, 'UTF-8') ?>
+                                </span>
+                                <form method="POST" action="/oportunidades/<?= (int) $item->id ?>/decidir" class="quick-decision">
+                                    <select name="status_acompanhamento">
+                                        <option value="EM_ANALISE" <?= $pipelineStatus === 'EM_ANALISE' ? 'selected' : '' ?>>Em analise</option>
+                                        <option value="PROPOSTA" <?= $pipelineStatus === 'PROPOSTA' ? 'selected' : '' ?>>Proposta</option>
+                                        <option value="FAVORITO" <?= $pipelineStatus === 'FAVORITO' ? 'selected' : '' ?>>Favorito</option>
+                                        <option value="DESCARTADO" <?= $pipelineStatus === 'DESCARTADO' ? 'selected' : '' ?>>Descartado</option>
+                                        <option value="ENCERRADO" <?= $pipelineStatus === 'ENCERRADO' ? 'selected' : '' ?>>Encerrado</option>
+                                    </select>
+                                    <input type="hidden" name="redirect_to" value="<?= htmlspecialchars($redirectTo, ENT_QUOTES, 'UTF-8') ?>">
+                                    <button class="btn" type="submit">Aplicar</button>
+                                </form>
+                                <?php if (($item->favoritoId ?? null) !== null && (int) $item->favoritoId > 0): ?>
+                                    <div style="margin-top: 6px;">
+                                        <a class="btn" href="/favoritos/<?= (int) $item->favoritoId ?>">Abrir</a>
+                                    </div>
                                 <?php endif; ?>
                             </td>
                             <td><a class="btn" href="/oportunidades/<?= (int) $item->id ?>">Detalhes</a></td>

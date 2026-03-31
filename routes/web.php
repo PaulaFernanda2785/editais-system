@@ -113,7 +113,43 @@ $router->get('/oportunidades/{id}', 'CorrespondenciaController@show', [
     TenantMiddleware::class,
     AssinaturaMiddleware::class,
 ]);
+$router->post('/oportunidades/{id}/decidir', 'CorrespondenciaController@decidir', [
+    AuthMiddleware::class,
+    TenantMiddleware::class,
+    AssinaturaMiddleware::class,
+]);
 $router->post('/oportunidades/processar', 'CorrespondenciaController@processar', [
+    AuthMiddleware::class,
+    TenantMiddleware::class,
+    AssinaturaMiddleware::class,
+]);
+
+$router->get('/favoritos', 'FavoritoController@index', [
+    AuthMiddleware::class,
+    TenantMiddleware::class,
+    AssinaturaMiddleware::class,
+]);
+$router->get('/favoritos/{id}', 'FavoritoController@show', [
+    AuthMiddleware::class,
+    TenantMiddleware::class,
+    AssinaturaMiddleware::class,
+]);
+$router->post('/favoritos/{id}/status', 'FavoritoController@updateStatus', [
+    AuthMiddleware::class,
+    TenantMiddleware::class,
+    AssinaturaMiddleware::class,
+]);
+$router->post('/favoritos/{id}/tarefas', 'FavoritoController@storeTarefa', [
+    AuthMiddleware::class,
+    TenantMiddleware::class,
+    AssinaturaMiddleware::class,
+]);
+$router->post('/favoritos/{id}/tarefas/{tarefaId}/status', 'FavoritoController@updateTarefaStatus', [
+    AuthMiddleware::class,
+    TenantMiddleware::class,
+    AssinaturaMiddleware::class,
+]);
+$router->post('/favoritos/{id}/tarefas/{tarefaId}/delete', 'FavoritoController@deleteTarefa', [
     AuthMiddleware::class,
     TenantMiddleware::class,
     AssinaturaMiddleware::class,
