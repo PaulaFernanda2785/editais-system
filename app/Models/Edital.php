@@ -8,6 +8,8 @@ class Edital
 {
     public int $id = 0;
     public int $fonteId = 0;
+    public ?string $fonteCodigo = null;
+    public ?string $fonteNome = null;
     public ?string $codigoFonte = null;
     public ?string $numeroEdital = null;
     public string $orgaoNome = '';
@@ -36,6 +38,8 @@ class Edital
         $edital = new self();
         $edital->id = (int) ($data['id'] ?? 0);
         $edital->fonteId = (int) ($data['fonte_id'] ?? 0);
+        $edital->fonteCodigo = isset($data['fonte_codigo']) ? (string) $data['fonte_codigo'] : null;
+        $edital->fonteNome = isset($data['fonte_nome']) ? (string) $data['fonte_nome'] : null;
         $edital->codigoFonte = isset($data['codigo_fonte']) ? (string) $data['codigo_fonte'] : null;
         $edital->numeroEdital = isset($data['numero_edital']) ? (string) $data['numero_edital'] : null;
         $edital->orgaoNome = (string) ($data['orgao_nome'] ?? '');
@@ -62,4 +66,3 @@ class Edital
         return $edital;
     }
 }
-

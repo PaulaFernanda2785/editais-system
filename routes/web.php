@@ -92,6 +92,33 @@ $router->post('/monitoramento/{id}/palavras/{palavraId}/delete', 'PalavraChaveCo
     AssinaturaMiddleware::class,
 ]);
 
+$router->get('/editais', 'EditalController@index', [
+    AuthMiddleware::class,
+    TenantMiddleware::class,
+    AssinaturaMiddleware::class,
+]);
+$router->get('/editais/{id}', 'EditalController@show', [
+    AuthMiddleware::class,
+    TenantMiddleware::class,
+    AssinaturaMiddleware::class,
+]);
+
+$router->get('/oportunidades', 'CorrespondenciaController@index', [
+    AuthMiddleware::class,
+    TenantMiddleware::class,
+    AssinaturaMiddleware::class,
+]);
+$router->get('/oportunidades/{id}', 'CorrespondenciaController@show', [
+    AuthMiddleware::class,
+    TenantMiddleware::class,
+    AssinaturaMiddleware::class,
+]);
+$router->post('/oportunidades/processar', 'CorrespondenciaController@processar', [
+    AuthMiddleware::class,
+    TenantMiddleware::class,
+    AssinaturaMiddleware::class,
+]);
+
 $router->get('/fontes', 'FonteController@index', [
     AuthMiddleware::class,
     AdminMiddleware::class,

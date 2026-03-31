@@ -47,7 +47,9 @@ $isAdmin = in_array(strtoupper($perfilRaw), ['SUPER_ADMIN', 'ADMIN'], true);
                 <p>Bem-vindo(a), <?= $nome ?>.</p>
             </div>
             <div class="actions">
+                <a class="btn" href="/editais">Catalogo de editais</a>
                 <a class="btn" href="/monitoramento">Perfis de monitoramento</a>
+                <a class="btn" href="/oportunidades">Oportunidades</a>
                 <?php if ($isAdmin): ?>
                     <a class="btn" href="/fontes">Fontes de coleta</a>
                     <a class="btn" href="/admin/coletas">Coletas</a>
