@@ -10,6 +10,7 @@ $tarefas = isset($tarefas) && is_array($tarefas) ? $tarefas : [];
 $recomendacao = isset($recomendacao) && is_array($recomendacao) ? $recomendacao : [];
 $statusPermitidos = isset($statusPermitidos) && is_array($statusPermitidos) ? $statusPermitidos : [];
 $statusTarefaPermitidos = isset($statusTarefaPermitidos) && is_array($statusTarefaPermitidos) ? $statusTarefaPermitidos : [];
+$usuariosResponsaveis = isset($usuariosResponsaveis) && is_array($usuariosResponsaveis) ? $usuariosResponsaveis : [];
 $message = isset($message) ? (string) $message : null;
 
 if ($favorito === null) {
@@ -190,7 +191,7 @@ $badgeTarefaClass = static function (?string $status): string {
                                 <?php endif; ?>
                             </td>
                             <td>
-                                <span class="muted">Responsavel: <?= htmlspecialchars((string) ($tarefa->responsavel ?? '-'), ENT_QUOTES, 'UTF-8') ?></span><br>
+                                <span class="muted">Responsavel: <?= htmlspecialchars((string) ($tarefa->responsavelUsuarioNome ?? $tarefa->responsavel ?? '-'), ENT_QUOTES, 'UTF-8') ?></span><br>
                                 <span class="muted">Prazo: <?= htmlspecialchars((string) ($tarefa->dataLimite ?? '-'), ENT_QUOTES, 'UTF-8') ?></span><br>
                                 <span class="muted">Concluida em: <?= htmlspecialchars((string) ($tarefa->concluidaEm ?? '-'), ENT_QUOTES, 'UTF-8') ?></span>
                             </td>
@@ -228,12 +229,23 @@ $badgeTarefaClass = static function (?string $status): string {
                         <input id="titulo" name="titulo" type="text" maxlength="180" required>
                     </article>
                     <article>
-                        <label for="responsavel">Responsavel</label>
-                        <input id="responsavel" name="responsavel" type="text" maxlength="120">
+                        <label for="responsavel_usuario_id">Responsavel interno</label>
+                        <select id="responsavel_usuario_id" name="responsavel_usuario_id">
+                            <option value="0">Sem responsavel definido</option>
+                            <?php foreach ($usuariosResponsaveis as $usuarioResponsavel): ?>
+                                <option value="<?= (int) $usuarioResponsavel->id ?>">
+                                    <?= htmlspecialchars((string) $usuarioResponsavel->nome, ENT_QUOTES, 'UTF-8') ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
                     </article>
                     <article>
                         <label for="data_limite">Data limite</label>
                         <input id="data_limite" name="data_limite" type="date">
+                    </article>
+                    <article>
+                        <label for="responsavel">Nome exibicao (opcional)</label>
+                        <input id="responsavel" name="responsavel" type="text" maxlength="120">
                     </article>
                     <article style="grid-column: 1 / -1;">
                         <label for="descricao">Descricao</label>

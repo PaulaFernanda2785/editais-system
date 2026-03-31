@@ -129,6 +129,11 @@ $router->get('/favoritos', 'FavoritoController@index', [
     TenantMiddleware::class,
     AssinaturaMiddleware::class,
 ]);
+$router->get('/favoritos/relatorio/conversao', 'FavoritoController@relatorioConversao', [
+    AuthMiddleware::class,
+    TenantMiddleware::class,
+    AssinaturaMiddleware::class,
+]);
 $router->get('/favoritos/{id}', 'FavoritoController@show', [
     AuthMiddleware::class,
     TenantMiddleware::class,

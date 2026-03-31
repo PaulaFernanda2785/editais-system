@@ -23,6 +23,8 @@ class FavoritoController extends Controller
         $empresaId = (int) $request->session('auth.empresa_id', 0);
         $resultado = $this->favoritoService->listarPipeline($empresaId, $request->input());
         $resumo = $this->favoritoService->resumoPorStatus($empresaId);
+        $alertasPrazo = $this->favoritoService->alertasPrazo($empresaId, 48, 8);
+        $conversao = $this->favoritoService->relatorioConversao($empresaId, []);
 
         $response->view('favoritos/index', [
             'appName' => $_ENV['APP_NAME'] ?? 'SaaS Editais',
@@ -37,6 +39,8 @@ class FavoritoController extends Controller
             'filters' => $resultado['filters'],
             'statusPermitidos' => $resultado['status_permitidos'],
             'resumo' => $resumo,
+            'alertasPrazo' => $alertasPrazo,
+            'conversao' => $conversao,
             'message' => $request->pullSession('favoritos.message', null),
         ]);
     }
@@ -62,6 +66,23 @@ class FavoritoController extends Controller
             'recomendacao' => $detalhe['recomendacao'],
             'statusPermitidos' => $detalhe['status_permitidos'],
             'statusTarefaPermitidos' => $detalhe['status_tarefa_permitidos'],
+            'usuariosResponsaveis' => $detalhe['usuarios_responsaveis'],
+            'message' => $request->pullSession('favoritos.message', null),
+        ]);
+    }
+
+    public function relatorioConversao(Request $request, Response $response): void
+    {
+        $empresaId = (int) $request->session('auth.empresa_id', 0);
+        $relatorio = $this->favoritoService->relatorioConversao($empresaId, $request->input());
+        $alertasPrazo = $this->favoritoService->alertasPrazo($empresaId, 48, 8);
+
+        $response->view('favoritos/relatorio-conversao', [
+            'appName' => $_ENV['APP_NAME'] ?? 'SaaS Editais',
+            'auth' => $request->session('auth', []),
+            'tenant' => $request->session('tenant.empresa', []),
+            'relatorio' => $relatorio,
+            'alertasPrazo' => $alertasPrazo,
             'message' => $request->pullSession('favoritos.message', null),
         ]);
     }

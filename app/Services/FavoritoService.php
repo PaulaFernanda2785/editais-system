@@ -8,8 +8,11 @@ use App\Helpers\ExternalLinkHelper;
 use App\Models\Favorito;
 use App\Repositories\CorrespondenciaRepository;
 use App\Repositories\FavoritoRepository;
+use App\Repositories\FavoritoStatusHistoricoRepository;
 use App\Repositories\FavoritoTarefaRepository;
+use App\Repositories\UsuarioRepository;
 use DateTimeImmutable;
+use Throwable;
 
 class FavoritoService
 {
@@ -25,6 +28,8 @@ class FavoritoService
 
     private FavoritoRepository $favoritoRepository;
     private FavoritoTarefaRepository $tarefaRepository;
+    private FavoritoStatusHistoricoRepository $historicoStatusRepository;
+    private UsuarioRepository $usuarioRepository;
     private CorrespondenciaRepository $correspondenciaRepository;
     private LogService $logService;
     private AuditService $auditService;
@@ -32,12 +37,16 @@ class FavoritoService
     public function __construct(
         ?FavoritoRepository $favoritoRepository = null,
         ?FavoritoTarefaRepository $tarefaRepository = null,
+        ?FavoritoStatusHistoricoRepository $historicoStatusRepository = null,
+        ?UsuarioRepository $usuarioRepository = null,
         ?CorrespondenciaRepository $correspondenciaRepository = null,
         ?LogService $logService = null,
         ?AuditService $auditService = null
     ) {
         $this->favoritoRepository = $favoritoRepository ?? new FavoritoRepository();
         $this->tarefaRepository = $tarefaRepository ?? new FavoritoTarefaRepository();
+        $this->historicoStatusRepository = $historicoStatusRepository ?? new FavoritoStatusHistoricoRepository();
+        $this->usuarioRepository = $usuarioRepository ?? new UsuarioRepository();
         $this->correspondenciaRepository = $correspondenciaRepository ?? new CorrespondenciaRepository();
         $this->logService = $logService ?? new LogService();
         $this->auditService = $auditService ?? new AuditService($this->logService);
@@ -98,6 +107,7 @@ class FavoritoService
             'favorito' => $favorito,
             'tarefas' => $this->tarefaRepository->listByFavorito($favoritoId, $empresaId),
             'recomendacao' => $this->gerarRecomendacao($favorito->correspondenciaScore),
+            'usuarios_responsaveis' => $this->usuarioRepository->listAtivosByEmpresa($empresaId),
             'status_permitidos' => self::STATUS_ACOMPANHAMENTO,
             'status_tarefa_permitidos' => self::STATUS_TAREFA,
         ];
@@ -128,6 +138,9 @@ class FavoritoService
             ];
         }
 
+        $favoritoExistente = $this->favoritoRepository->findByEmpresaAndEdital($empresaId, $correspondencia->editalId);
+        $statusAnterior = $favoritoExistente?->statusAcompanhamento;
+
         $resultado = $this->favoritoRepository->upsertByEmpresaEdital(
             $empresaId,
             $correspondencia->editalId,
@@ -136,6 +149,19 @@ class FavoritoService
         );
 
         $favoritoId = isset($resultado['favorito_id']) ? (int) $resultado['favorito_id'] : null;
+        if ($favoritoId === null && $favoritoExistente !== null) {
+            $favoritoId = $favoritoExistente->id;
+        }
+
+        $this->registrarHistoricoStatus(
+            $favoritoId,
+            $empresaId,
+            $usuarioId,
+            $statusAnterior,
+            $status,
+            'decisao_oportunidade'
+        );
+
         if ($favoritoId !== null && in_array($status, ['EM_ANALISE', 'PROPOSTA'], true)) {
             $this->garantirChecklistInicial(
                 $favoritoId,
@@ -209,6 +235,15 @@ class FavoritoService
             $textoObservacao
         );
 
+        $this->registrarHistoricoStatus(
+            $favoritoId,
+            $empresaId,
+            $usuarioId,
+            $favorito->statusAcompanhamento,
+            $status,
+            'pipeline_status'
+        );
+
         if (in_array($status, ['EM_ANALISE', 'PROPOSTA'], true)) {
             $this->garantirChecklistInicial(
                 $favoritoId,
@@ -270,13 +305,31 @@ class FavoritoService
         }
 
         $dataLimite = $this->normalizarData($payload['data_limite'] ?? null);
+        $responsavelUsuarioId = $this->sanitizeInt($payload['responsavel_usuario_id'] ?? 0, 0, 100000000, 0);
+        $responsavelUsuario = null;
+        if ($responsavelUsuarioId > 0) {
+            $responsavelUsuario = $this->usuarioRepository->findByIdAndEmpresa($responsavelUsuarioId, $empresaId);
+            if ($responsavelUsuario === null || !$responsavelUsuario->canLogin()) {
+                return [
+                    'sucesso' => false,
+                    'mensagem' => 'Responsavel selecionado invalido ou inativo.',
+                ];
+            }
+        }
+
+        $responsavelTexto = $this->normalizarTextoLimite($payload['responsavel'] ?? null, 120);
+        if ($responsavelUsuario !== null) {
+            $responsavelTexto = $responsavelUsuario->nome;
+        }
+
         $ordem = $this->tarefaRepository->nextOrdem($favoritoId, $empresaId);
         $tarefa = $this->tarefaRepository->create([
             'favorito_id' => $favoritoId,
             'empresa_id' => $empresaId,
             'titulo' => $titulo,
             'descricao' => $this->normalizarTextoLimite($payload['descricao'] ?? null, 3000),
-            'responsavel' => $this->normalizarTextoLimite($payload['responsavel'] ?? null, 120),
+            'responsavel' => $responsavelTexto,
+            'responsavel_usuario_id' => $responsavelUsuario?->id,
             'data_limite' => $dataLimite,
             'status' => 'PENDENTE',
             'ordem' => $ordem,
@@ -296,6 +349,7 @@ class FavoritoService
             [
                 'favorito_id' => $favoritoId,
                 'titulo' => $tarefa->titulo,
+                'responsavel_usuario_id' => $responsavelUsuario?->id,
                 'data_limite' => $tarefa->dataLimite,
             ],
             $empresaId,
@@ -416,6 +470,82 @@ class FavoritoService
     }
 
     /**
+     * @return array<string, mixed>
+     */
+    public function alertasPrazo(int $empresaId, int $horas = 48, int $limite = 20): array
+    {
+        if ($horas < 1) {
+            $horas = 48;
+        }
+        if ($limite < 1) {
+            $limite = 20;
+        }
+
+        $dias = max(1, (int) ceil($horas / 24));
+        try {
+            $vencendo = $this->tarefaRepository->listAlertasVencendo($empresaId, $dias, $limite);
+            $vencidas = $this->tarefaRepository->listAlertasVencidas($empresaId, $limite);
+        } catch (Throwable $exception) {
+            $this->logService->error('favoritos.alertas_prazo', 'Falha ao carregar alertas de prazo.', [
+                'empresa_id' => $empresaId,
+                'erro' => $exception->getMessage(),
+            ]);
+
+            $vencendo = [];
+            $vencidas = [];
+        }
+
+        return [
+            'janela_horas' => $horas,
+            'vencendo' => $vencendo,
+            'vencidas' => $vencidas,
+            'totais' => [
+                'vencendo' => count($vencendo),
+                'vencidas' => count($vencidas),
+            ],
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function relatorioConversao(int $empresaId, array $input = []): array
+    {
+        $dataDe = $this->normalizarData($input['data_de'] ?? null);
+        $dataAte = $this->normalizarData($input['data_ate'] ?? null);
+        try {
+            return $this->historicoStatusRepository->relatorioConversao($empresaId, $dataDe, $dataAte);
+        } catch (Throwable $exception) {
+            $this->logService->error('favoritos.relatorio_conversao', 'Falha ao gerar relatorio de conversao.', [
+                'empresa_id' => $empresaId,
+                'erro' => $exception->getMessage(),
+            ]);
+
+            return [
+                'periodo' => [
+                    'data_de' => $dataDe ?? date('Y-m-d', strtotime('-90 days')),
+                    'data_ate' => $dataAte ?? date('Y-m-d'),
+                ],
+                'totais' => [
+                    'em_analise' => 0,
+                    'proposta' => 0,
+                    'encerrado' => 0,
+                ],
+                'taxas' => [
+                    'analise_para_proposta' => 0.0,
+                    'proposta_para_encerrado' => 0.0,
+                ],
+                'funil' => [
+                    ['fase' => 'EM_ANALISE', 'quantidade' => 0],
+                    ['fase' => 'PROPOSTA', 'quantidade' => 0],
+                    ['fase' => 'ENCERRADO', 'quantidade' => 0],
+                ],
+            ];
+        }
+    }
+
+    /**
      * @return array<string, string>
      */
     private function gerarRecomendacao(?float $score): array
@@ -469,6 +599,47 @@ class FavoritoService
             null,
             'edital'
         );
+    }
+
+    private function registrarHistoricoStatus(
+        ?int $favoritoId,
+        int $empresaId,
+        ?int $usuarioId,
+        ?string $statusAnterior,
+        string $statusNovo,
+        string $origem
+    ): void {
+        if ($favoritoId === null || $favoritoId <= 0) {
+            return;
+        }
+
+        $anterior = $statusAnterior !== null ? strtoupper(trim($statusAnterior)) : null;
+        $novo = strtoupper(trim($statusNovo));
+
+        if ($novo === '') {
+            return;
+        }
+
+        if ($anterior === $novo) {
+            return;
+        }
+
+        try {
+            $this->historicoStatusRepository->registrarTransicao(
+                $favoritoId,
+                $empresaId,
+                $anterior,
+                $novo,
+                $usuarioId,
+                $origem
+            );
+        } catch (Throwable $exception) {
+            $this->logService->error('favoritos.historico_status', 'Falha ao registrar historico de status.', [
+                'empresa_id' => $empresaId,
+                'favorito_id' => $favoritoId,
+                'erro' => $exception->getMessage(),
+            ]);
+        }
     }
 
     private function garantirChecklistInicial(int $favoritoId, int $empresaId, ?string $dataEncerramento): void

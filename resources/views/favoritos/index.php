@@ -14,6 +14,8 @@ $sort = isset($sort) ? (string) $sort : 'atualizado_desc';
 $filters = isset($filters) && is_array($filters) ? $filters : [];
 $statusPermitidos = isset($statusPermitidos) && is_array($statusPermitidos) ? $statusPermitidos : [];
 $resumo = isset($resumo) && is_array($resumo) ? $resumo : [];
+$alertasPrazo = isset($alertasPrazo) && is_array($alertasPrazo) ? $alertasPrazo : [];
+$conversao = isset($conversao) && is_array($conversao) ? $conversao : [];
 $message = isset($message) ? (string) $message : null;
 
 $usuarioNome = htmlspecialchars((string) ($auth['nome'] ?? 'Usuario'), ENT_QUOTES, 'UTF-8');
@@ -86,6 +88,7 @@ $badgeStatusClass = static function (?string $status): string {
             <div class="actions">
                 <a class="btn" href="/dashboard">Dashboard</a>
                 <a class="btn" href="/oportunidades">Oportunidades</a>
+                <a class="btn" href="/favoritos/relatorio/conversao">Relatorio de conversao</a>
                 <a class="btn" href="/editais">Catalogo</a>
                 <a class="btn" href="/logout">Sair</a>
             </div>
@@ -121,6 +124,56 @@ $badgeStatusClass = static function (?string $status): string {
                 <article class="summary-card">
                     <strong>Descartado</strong>
                     <div><?= (int) ($resumo['DESCARTADO'] ?? 0) ?></div>
+                </article>
+                <article class="summary-card">
+                    <strong>Conv. Analise -> Proposta</strong>
+                    <div><?= number_format((float) ($conversao['taxas']['analise_para_proposta'] ?? 0), 1, ',', '.') ?>%</div>
+                </article>
+                <article class="summary-card">
+                    <strong>Conv. Proposta -> Encerrado</strong>
+                    <div><?= number_format((float) ($conversao['taxas']['proposta_para_encerrado'] ?? 0), 1, ',', '.') ?>%</div>
+                </article>
+            </div>
+        </section>
+
+        <section class="panel">
+            <h3>Alertas de prazo (48h)</h3>
+            <p class="muted">
+                Vencendo em ate 48h: <?= (int) ($alertasPrazo['totais']['vencendo'] ?? 0) ?>
+                | Vencidas: <?= (int) ($alertasPrazo['totais']['vencidas'] ?? 0) ?>
+            </p>
+            <div class="grid">
+                <article>
+                    <h4>Vencendo em ate 48h</h4>
+                    <?php $vencendo = isset($alertasPrazo['vencendo']) && is_array($alertasPrazo['vencendo']) ? $alertasPrazo['vencendo'] : []; ?>
+                    <?php if ($vencendo === []): ?>
+                        <p class="muted">Sem tarefas para as proximas 48h.</p>
+                    <?php else: ?>
+                        <?php foreach ($vencendo as $linha): ?>
+                            <p class="muted">
+                                <strong>#<?= htmlspecialchars((string) ($linha['numero_edital'] ?? '-'), ENT_QUOTES, 'UTF-8') ?></strong>
+                                - <?= htmlspecialchars((string) ($linha['titulo'] ?? '-'), ENT_QUOTES, 'UTF-8') ?>
+                                (<?= htmlspecialchars((string) ($linha['data_limite'] ?? '-'), ENT_QUOTES, 'UTF-8') ?>)
+                                <a href="/favoritos/<?= (int) ($linha['favorito_id'] ?? 0) ?>">abrir</a>
+                            </p>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </article>
+                <article>
+                    <h4>Vencidas</h4>
+                    <?php $vencidas = isset($alertasPrazo['vencidas']) && is_array($alertasPrazo['vencidas']) ? $alertasPrazo['vencidas'] : []; ?>
+                    <?php if ($vencidas === []): ?>
+                        <p class="muted">Sem tarefas vencidas.</p>
+                    <?php else: ?>
+                        <?php foreach ($vencidas as $linha): ?>
+                            <p class="muted">
+                                <strong>#<?= htmlspecialchars((string) ($linha['numero_edital'] ?? '-'), ENT_QUOTES, 'UTF-8') ?></strong>
+                                - <?= htmlspecialchars((string) ($linha['titulo'] ?? '-'), ENT_QUOTES, 'UTF-8') ?>
+                                (<?= htmlspecialchars((string) ($linha['data_limite'] ?? '-'), ENT_QUOTES, 'UTF-8') ?>)
+                                <a href="/favoritos/<?= (int) ($linha['favorito_id'] ?? 0) ?>">abrir</a>
+                            </p>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
                 </article>
             </div>
         </section>

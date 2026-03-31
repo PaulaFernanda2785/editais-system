@@ -48,6 +48,31 @@ class UsuarioRepository
         return Usuario::fromArray($data);
     }
 
+    /**
+     * @return array<int, Usuario>
+     */
+    public function listAtivosByEmpresa(int $empresaId): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT *
+            FROM usuarios
+            WHERE empresa_id = :empresa_id
+              AND status = \'ATIVO\'
+            ORDER BY nome ASC, id ASC'
+        );
+        $stmt->execute(['empresa_id' => $empresaId]);
+
+        $rows = $stmt->fetchAll();
+        if (!is_array($rows)) {
+            return [];
+        }
+
+        return array_map(
+            static fn(array $row): Usuario => Usuario::fromArray($row),
+            $rows
+        );
+    }
+
     public function updateUltimoLogin(int $usuarioId): void
     {
         $stmt = $this->pdo->prepare(

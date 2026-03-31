@@ -12,6 +12,8 @@ class FavoritoTarefa
     public string $titulo = '';
     public ?string $descricao = null;
     public ?string $responsavel = null;
+    public ?int $responsavelUsuarioId = null;
+    public ?string $responsavelUsuarioNome = null;
     public ?string $dataLimite = null;
     public string $status = 'PENDENTE';
     public int $ordem = 1;
@@ -28,6 +30,12 @@ class FavoritoTarefa
         $item->titulo = (string) ($data['titulo'] ?? '');
         $item->descricao = isset($data['descricao']) ? (string) $data['descricao'] : null;
         $item->responsavel = isset($data['responsavel']) ? (string) $data['responsavel'] : null;
+        $item->responsavelUsuarioId = isset($data['responsavel_usuario_id'])
+            ? (int) $data['responsavel_usuario_id']
+            : null;
+        $item->responsavelUsuarioNome = isset($data['responsavel_usuario_nome'])
+            ? (string) $data['responsavel_usuario_nome']
+            : null;
         $item->dataLimite = isset($data['data_limite']) ? (string) $data['data_limite'] : null;
         $item->status = (string) ($data['status'] ?? 'PENDENTE');
         $item->ordem = (int) ($data['ordem'] ?? 1);

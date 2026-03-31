@@ -24,9 +24,12 @@ class FavoritoTarefaRepository
     public function listByFavorito(int $favoritoId, int $empresaId): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT ft.*
+            'SELECT
+                ft.*,
+                u.nome AS responsavel_usuario_nome
             FROM favorito_tarefas ft
             INNER JOIN favoritos f ON f.id = ft.favorito_id
+            LEFT JOIN usuarios u ON u.id = ft.responsavel_usuario_id
             WHERE ft.favorito_id = :favorito_id
               AND ft.empresa_id = :empresa_id_tarefa
               AND f.empresa_id = :empresa_id_favorito
@@ -52,9 +55,12 @@ class FavoritoTarefaRepository
     public function findByIdAndFavorito(int $tarefaId, int $favoritoId, int $empresaId): ?FavoritoTarefa
     {
         $stmt = $this->pdo->prepare(
-            'SELECT ft.*
+            'SELECT
+                ft.*,
+                u.nome AS responsavel_usuario_nome
             FROM favorito_tarefas ft
             INNER JOIN favoritos f ON f.id = ft.favorito_id
+            LEFT JOIN usuarios u ON u.id = ft.responsavel_usuario_id
             WHERE ft.id = :id
               AND ft.favorito_id = :favorito_id
               AND ft.empresa_id = :empresa_id_tarefa
@@ -85,6 +91,7 @@ class FavoritoTarefaRepository
                 titulo,
                 descricao,
                 responsavel,
+                responsavel_usuario_id,
                 data_limite,
                 status,
                 ordem,
@@ -96,6 +103,7 @@ class FavoritoTarefaRepository
                 :titulo,
                 :descricao,
                 :responsavel,
+                :responsavel_usuario_id,
                 :data_limite,
                 :status,
                 :ordem,
@@ -109,6 +117,9 @@ class FavoritoTarefaRepository
             'titulo' => (string) ($data['titulo'] ?? ''),
             'descricao' => $this->normalizeText($data['descricao'] ?? null, 3000),
             'responsavel' => $this->normalizeText($data['responsavel'] ?? null, 120),
+            'responsavel_usuario_id' => isset($data['responsavel_usuario_id'])
+                ? (int) $data['responsavel_usuario_id']
+                : null,
             'data_limite' => $data['data_limite'] ?? null,
             'status' => (string) ($data['status'] ?? 'PENDENTE'),
             'ordem' => (int) ($data['ordem'] ?? 1),
@@ -204,6 +215,138 @@ class FavoritoTarefaRepository
         }
 
         return ((int) $max) + 1;
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function listAlertasVencendo(int $empresaId, int $dias = 2, int $limit = 20): array
+    {
+        if ($dias < 1) {
+            $dias = 1;
+        }
+        if ($limit < 1) {
+            $limit = 20;
+        }
+
+        $stmt = $this->pdo->prepare(
+            'SELECT
+                ft.id AS tarefa_id,
+                ft.favorito_id,
+                ft.titulo,
+                ft.data_limite,
+                ft.status,
+                f.status_acompanhamento,
+                e.numero_edital,
+                e.orgao_nome,
+                u.nome AS responsavel_usuario_nome
+            FROM favorito_tarefas ft
+            INNER JOIN favoritos f ON f.id = ft.favorito_id
+            INNER JOIN editais e ON e.id = f.edital_id
+            LEFT JOIN usuarios u ON u.id = ft.responsavel_usuario_id
+            WHERE ft.empresa_id = :empresa_id
+              AND f.empresa_id = :empresa_id_favorito
+              AND ft.status <> \'CONCLUIDA\'
+              AND ft.data_limite IS NOT NULL
+              AND ft.data_limite >= CURDATE()
+              AND ft.data_limite <= DATE_ADD(CURDATE(), INTERVAL :dias DAY)
+            ORDER BY ft.data_limite ASC, ft.id ASC
+            LIMIT :limite'
+        );
+        $stmt->bindValue(':empresa_id', $empresaId, PDO::PARAM_INT);
+        $stmt->bindValue(':empresa_id_favorito', $empresaId, PDO::PARAM_INT);
+        $stmt->bindValue(':dias', $dias, PDO::PARAM_INT);
+        $stmt->bindValue(':limite', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+
+        $rows = $stmt->fetchAll();
+        return is_array($rows) ? $rows : [];
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function listAlertasVencidas(int $empresaId, int $limit = 20): array
+    {
+        if ($limit < 1) {
+            $limit = 20;
+        }
+
+        $stmt = $this->pdo->prepare(
+            'SELECT
+                ft.id AS tarefa_id,
+                ft.favorito_id,
+                ft.titulo,
+                ft.data_limite,
+                ft.status,
+                f.status_acompanhamento,
+                e.numero_edital,
+                e.orgao_nome,
+                u.nome AS responsavel_usuario_nome
+            FROM favorito_tarefas ft
+            INNER JOIN favoritos f ON f.id = ft.favorito_id
+            INNER JOIN editais e ON e.id = f.edital_id
+            LEFT JOIN usuarios u ON u.id = ft.responsavel_usuario_id
+            WHERE ft.empresa_id = :empresa_id
+              AND f.empresa_id = :empresa_id_favorito
+              AND ft.status <> \'CONCLUIDA\'
+              AND ft.data_limite IS NOT NULL
+              AND ft.data_limite < CURDATE()
+            ORDER BY ft.data_limite ASC, ft.id ASC
+            LIMIT :limite'
+        );
+        $stmt->bindValue(':empresa_id', $empresaId, PDO::PARAM_INT);
+        $stmt->bindValue(':empresa_id_favorito', $empresaId, PDO::PARAM_INT);
+        $stmt->bindValue(':limite', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+
+        $rows = $stmt->fetchAll();
+        return is_array($rows) ? $rows : [];
+    }
+
+    public function countAlertasVencendo(int $empresaId, int $dias = 2): int
+    {
+        if ($dias < 1) {
+            $dias = 1;
+        }
+
+        $stmt = $this->pdo->prepare(
+            'SELECT COUNT(*)
+            FROM favorito_tarefas ft
+            INNER JOIN favoritos f ON f.id = ft.favorito_id
+            WHERE ft.empresa_id = :empresa_id
+              AND f.empresa_id = :empresa_id_favorito
+              AND ft.status <> \'CONCLUIDA\'
+              AND ft.data_limite IS NOT NULL
+              AND ft.data_limite >= CURDATE()
+              AND ft.data_limite <= DATE_ADD(CURDATE(), INTERVAL :dias DAY)'
+        );
+        $stmt->bindValue(':empresa_id', $empresaId, PDO::PARAM_INT);
+        $stmt->bindValue(':empresa_id_favorito', $empresaId, PDO::PARAM_INT);
+        $stmt->bindValue(':dias', $dias, PDO::PARAM_INT);
+        $stmt->execute();
+
+        return (int) $stmt->fetchColumn();
+    }
+
+    public function countAlertasVencidas(int $empresaId): int
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT COUNT(*)
+            FROM favorito_tarefas ft
+            INNER JOIN favoritos f ON f.id = ft.favorito_id
+            WHERE ft.empresa_id = :empresa_id
+              AND f.empresa_id = :empresa_id_favorito
+              AND ft.status <> \'CONCLUIDA\'
+              AND ft.data_limite IS NOT NULL
+              AND ft.data_limite < CURDATE()'
+        );
+        $stmt->execute([
+            'empresa_id' => $empresaId,
+            'empresa_id_favorito' => $empresaId,
+        ]);
+
+        return (int) $stmt->fetchColumn();
     }
 
     private function normalizeText(mixed $value, int $limit): ?string
