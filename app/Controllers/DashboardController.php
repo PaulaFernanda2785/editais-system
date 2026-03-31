@@ -30,6 +30,7 @@ class DashboardController extends Controller
             'auth' => $request->session('auth', []),
             'tenant' => $request->session('tenant.empresa', []),
             'assinatura' => $assinatura,
+            'adminMessage' => $request->pullSession('admin.message', null),
         ]);
     }
 }

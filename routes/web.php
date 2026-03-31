@@ -7,6 +7,7 @@ use App\Core\Response;
 use App\Middlewares\AuthMiddleware;
 use App\Middlewares\TenantMiddleware;
 use App\Middlewares\AssinaturaMiddleware;
+use App\Middlewares\AdminMiddleware;
 
 $router->get('/', function (Request $request, Response $response): void {
     if ($request->session('auth.user_id') !== null) {
@@ -89,6 +90,35 @@ $router->post('/monitoramento/{id}/palavras/{palavraId}/delete', 'PalavraChaveCo
     AuthMiddleware::class,
     TenantMiddleware::class,
     AssinaturaMiddleware::class,
+]);
+
+$router->get('/fontes', 'FonteController@index', [
+    AuthMiddleware::class,
+    AdminMiddleware::class,
+]);
+$router->get('/fontes/novo', 'FonteController@create', [
+    AuthMiddleware::class,
+    AdminMiddleware::class,
+]);
+$router->post('/fontes', 'FonteController@store', [
+    AuthMiddleware::class,
+    AdminMiddleware::class,
+]);
+$router->get('/fontes/{id}', 'FonteController@show', [
+    AuthMiddleware::class,
+    AdminMiddleware::class,
+]);
+$router->get('/fontes/{id}/editar', 'FonteController@edit', [
+    AuthMiddleware::class,
+    AdminMiddleware::class,
+]);
+$router->post('/fontes/{id}', 'FonteController@update', [
+    AuthMiddleware::class,
+    AdminMiddleware::class,
+]);
+$router->post('/fontes/{id}/toggle', 'FonteController@toggle', [
+    AuthMiddleware::class,
+    AdminMiddleware::class,
 ]);
 
 $router->get('/logout', 'AuthController@showLogout', [AuthMiddleware::class]);

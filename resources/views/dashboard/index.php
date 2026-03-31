@@ -6,6 +6,7 @@ $appName = isset($appName) ? (string) $appName : 'SaaS Editais';
 $auth = isset($auth) && is_array($auth) ? $auth : [];
 $tenant = isset($tenant) && is_array($tenant) ? $tenant : [];
 $assinatura = isset($assinatura) ? $assinatura : null;
+$adminMessage = isset($adminMessage) ? (string) $adminMessage : null;
 
 $nome = htmlspecialchars((string) ($auth['nome'] ?? 'Usuario'), ENT_QUOTES, 'UTF-8');
 $email = htmlspecialchars((string) ($auth['email'] ?? '-'), ENT_QUOTES, 'UTF-8');
@@ -16,6 +17,8 @@ $empresaCnpj = htmlspecialchars((string) ($tenant['cnpj'] ?? '-'), ENT_QUOTES, '
 $planoNome = $assinatura?->plano?->nome ?? '-';
 $statusAssinatura = $assinatura?->status ?? 'SEM_ASSINATURA';
 $fimAssinatura = $assinatura?->dataFim ?? '-';
+$perfilRaw = (string) ($auth['perfil'] ?? '');
+$isAdmin = in_array(strtoupper($perfilRaw), ['SUPER_ADMIN', 'ADMIN'], true);
 ?>
 <!doctype html>
 <html lang="pt-BR">
@@ -33,6 +36,7 @@ $fimAssinatura = $assinatura?->dataFim ?? '-';
         .card { background: #fff; border: 1px solid #dfe6f0; border-radius: 8px; padding: 12px; }
         .status-ok { color: #166534; font-weight: 700; }
         .status-warn { color: #b45309; font-weight: 700; }
+        .msg { margin: 10px 0 14px; border: 1px solid #f59e0b; background: #fffbeb; padding: 10px; }
     </style>
 </head>
 <body>
@@ -44,10 +48,17 @@ $fimAssinatura = $assinatura?->dataFim ?? '-';
             </div>
             <div class="actions">
                 <a class="btn" href="/monitoramento">Perfis de monitoramento</a>
+                <?php if ($isAdmin): ?>
+                    <a class="btn" href="/fontes">Fontes de coleta</a>
+                <?php endif; ?>
                 <a class="btn" href="/assinatura/status">Status da assinatura</a>
                 <a class="btn" href="/logout">Sair</a>
             </div>
         </header>
+
+        <?php if ($adminMessage !== null && $adminMessage !== ''): ?>
+            <div class="msg"><?= htmlspecialchars($adminMessage, ENT_QUOTES, 'UTF-8') ?></div>
+        <?php endif; ?>
 
         <section class="grid">
             <article class="card">
