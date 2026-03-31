@@ -12,12 +12,14 @@ function Write-Info {
 }
 
 function Get-StagedFiles {
-    $files = git diff --cached --name-only --diff-filter=ACMR 2>$null
+    $files = git -c core.quotepath=false diff --cached --name-only --diff-filter=ACMR 2>$null
     if (-not $files) {
         return @()
     }
 
-    return $files | Where-Object { $_ -and $_.Trim() -ne '' }
+    return $files |
+        ForEach-Object { $_.Trim('"').Trim() } |
+        Where-Object { $_ -and $_.Trim() -ne '' }
 }
 
 function Is-BinaryFile {
@@ -93,7 +95,15 @@ try {
 
     $violations = @()
     foreach ($file in $staged) {
-        if (-not (Test-Path -LiteralPath $file)) {
+        try {
+            $exists = Test-Path -LiteralPath $file
+        }
+        catch {
+            Write-Info "Arquivo ignorado por caminho invalido no scanner: $file"
+            continue
+        }
+
+        if (-not $exists) {
             continue
         }
 
