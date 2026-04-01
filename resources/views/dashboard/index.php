@@ -7,7 +7,15 @@ $auth = isset($auth) && is_array($auth) ? $auth : [];
 $tenant = isset($tenant) && is_array($tenant) ? $tenant : [];
 $assinatura = isset($assinatura) ? $assinatura : null;
 $resumo = isset($resumo) && is_array($resumo) ? $resumo : [];
+$notificacoesPropostas = isset($notificacoesPropostas) && is_array($notificacoesPropostas) ? $notificacoesPropostas : [];
+$alertasMessage = isset($alertasMessage) ? (string) $alertasMessage : null;
 $adminMessage = isset($adminMessage) ? (string) $adminMessage : null;
+
+$alertasItems = isset($notificacoesPropostas['items']) && is_array($notificacoesPropostas['items'])
+    ? $notificacoesPropostas['items']
+    : [];
+$alertasAtivosTotal = (int) ($notificacoesPropostas['total_ativos'] ?? count($alertasItems));
+$alertasNovos = (int) ($notificacoesPropostas['novos'] ?? 0);
 
 $nome = htmlspecialchars((string) ($auth['nome'] ?? 'Usuario'), ENT_QUOTES, 'UTF-8');
 $email = htmlspecialchars((string) ($auth['email'] ?? '-'), ENT_QUOTES, 'UTF-8');
@@ -38,6 +46,10 @@ $isAdmin = in_array(strtoupper($perfilRaw), ['SUPER_ADMIN', 'ADMIN'], true);
         .status-ok { color: #166534; font-weight: 700; }
         .status-warn { color: #b45309; font-weight: 700; }
         .msg { margin: 10px 0 14px; border: 1px solid #f59e0b; background: #fffbeb; padding: 10px; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+        .badge-new { background: #fee2e2; color: #991b1b; }
+        .badge-type { background: #dbeafe; color: #1d4ed8; }
+        ul { margin: 8px 0 0 18px; padding: 0; }
     </style>
 </head>
 <body>
@@ -65,6 +77,9 @@ $isAdmin = in_array(strtoupper($perfilRaw), ['SUPER_ADMIN', 'ADMIN'], true);
 
         <?php if ($adminMessage !== null && $adminMessage !== ''): ?>
             <div class="msg"><?= htmlspecialchars($adminMessage, ENT_QUOTES, 'UTF-8') ?></div>
+        <?php endif; ?>
+        <?php if ($alertasMessage !== null && $alertasMessage !== ''): ?>
+            <div class="msg"><?= htmlspecialchars($alertasMessage, ENT_QUOTES, 'UTF-8') ?></div>
         <?php endif; ?>
 
         <section class="grid">
@@ -173,6 +188,49 @@ $isAdmin = in_array(strtoupper($perfilRaw), ['SUPER_ADMIN', 'ADMIN'], true);
                 <h3>Taxa sucesso propostas</h3>
                 <p><?= number_format((float) ($resumo['taxa_sucesso_propostas'] ?? 0), 1, ',', '.') ?>%</p>
             </article>
+        </section>
+
+        <section class="card" style="margin-top: 10px;">
+            <h3>Alertas proativos de propostas</h3>
+            <p>
+                Ativos: <strong><?= $alertasAtivosTotal ?></strong>
+                | Novos: <strong><?= $alertasNovos ?></strong>
+            </p>
+            <?php if ($alertasNovos > 0): ?>
+                <form method="POST" action="/dashboard/alertas/vistos" style="margin-bottom: 10px;">
+                    <button class="btn" type="submit">Marcar alertas como vistos</button>
+                </form>
+            <?php endif; ?>
+
+            <?php if ($alertasItems === []): ?>
+                <p>Nenhum alerta ativo no momento.</p>
+            <?php else: ?>
+                <ul>
+                    <?php foreach ($alertasItems as $alerta): ?>
+                        <?php
+                            $tipo = (string) ($alerta['tipo_alerta'] ?? '-');
+                            $rotuloTipo = $tipo === 'SEM_RESULTADO' ? 'Sem resultado' : 'Julgamento parado';
+                            $dias = (int) ($alerta['dias_referencia'] ?? 0);
+                        ?>
+                        <li>
+                            <?php if ((int) ($alerta['novo'] ?? 0) === 1): ?>
+                                <span class="badge badge-new">NOVO</span>
+                            <?php endif; ?>
+                            <span class="badge badge-type"><?= htmlspecialchars($rotuloTipo, ENT_QUOTES, 'UTF-8') ?></span>
+                            <a href="/propostas/<?= (int) ($alerta['proposta_id'] ?? 0) ?>">
+                                Proposta #<?= (int) ($alerta['proposta_id'] ?? 0) ?>
+                            </a>
+                            - <?= htmlspecialchars((string) ($alerta['orgao_nome'] ?? '-'), ENT_QUOTES, 'UTF-8') ?>
+                            - <?= $dias ?> dia(s)
+                        </li>
+                    <?php endforeach; ?>
+                </ul>
+                <?php if ($alertasAtivosTotal > count($alertasItems)): ?>
+                    <p style="margin-top: 8px;">
+                        Exibindo os <?= count($alertasItems) ?> alertas mais recentes de um total de <?= $alertasAtivosTotal ?>.
+                    </p>
+                <?php endif; ?>
+            <?php endif; ?>
         </section>
     </div>
 </body>

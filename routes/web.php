@@ -26,6 +26,11 @@ $router->get('/dashboard', 'DashboardController@index', [
     TenantMiddleware::class,
     AssinaturaMiddleware::class,
 ]);
+$router->post('/dashboard/alertas/vistos', 'DashboardController@marcarAlertasVistos', [
+    AuthMiddleware::class,
+    TenantMiddleware::class,
+    AssinaturaMiddleware::class,
+]);
 
 $router->get('/assinatura/status', 'AssinaturaController@status', [
     AuthMiddleware::class,

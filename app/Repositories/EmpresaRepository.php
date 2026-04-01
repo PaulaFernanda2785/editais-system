@@ -29,4 +29,37 @@ class EmpresaRepository
 
         return Empresa::fromArray($row);
     }
+
+    /**
+     * @return array<int, int>
+     */
+    public function listIdsAtivas(?int $limit = null): array
+    {
+        $sql = 'SELECT id FROM empresas WHERE status = \'ATIVA\' ORDER BY id ASC';
+
+        if ($limit !== null && $limit > 0) {
+            $sql .= ' LIMIT :limite';
+        }
+
+        $stmt = $this->pdo->prepare($sql);
+        if ($limit !== null && $limit > 0) {
+            $stmt->bindValue(':limite', $limit, PDO::PARAM_INT);
+        }
+        $stmt->execute();
+
+        $rows = $stmt->fetchAll();
+        if (!is_array($rows)) {
+            return [];
+        }
+
+        $ids = [];
+        foreach ($rows as $row) {
+            $id = (int) ($row['id'] ?? 0);
+            if ($id > 0) {
+                $ids[] = $id;
+            }
+        }
+
+        return $ids;
+    }
 }
