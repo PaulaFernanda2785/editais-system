@@ -558,6 +558,76 @@ class PropostaAlertaPlaybookRepository
     }
 
     /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function listarEventosRecentesDashboard(int $empresaId, int $limit = 10): array
+    {
+        if ($limit < 1) {
+            $limit = 10;
+        }
+
+        $stmt = $this->pdo->prepare(
+            'SELECT
+                pbe.id,
+                pbe.playbook_id,
+                pbe.tipo_evento,
+                pbe.descricao,
+                pbe.detalhes_json,
+                pbe.criado_em,
+                pb.proposta_id,
+                pb.tipo_alerta,
+                pb.prioridade,
+                pb.status,
+                pb.responsavel_nome,
+                p.titulo AS proposta_titulo,
+                e.orgao_nome
+            FROM proposta_alerta_playbook_eventos pbe
+            INNER JOIN proposta_alerta_playbooks pb
+                ON pb.id = pbe.playbook_id
+               AND pb.empresa_id = pbe.empresa_id
+            LEFT JOIN propostas_execucao p
+                ON p.id = pb.proposta_id
+               AND p.empresa_id = pb.empresa_id
+            LEFT JOIN favoritos f
+                ON f.id = pb.favorito_id
+               AND f.empresa_id = pb.empresa_id
+            LEFT JOIN editais e ON e.id = f.edital_id
+            WHERE pbe.empresa_id = :empresa_id
+            ORDER BY pbe.criado_em DESC, pbe.id DESC
+            LIMIT :limite'
+        );
+        $stmt->bindValue(':empresa_id', $empresaId, PDO::PARAM_INT);
+        $stmt->bindValue(':limite', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+
+        $rows = $stmt->fetchAll();
+        if (!is_array($rows)) {
+            return [];
+        }
+
+        $resultado = [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $detalhes = [];
+            $detalhesRaw = isset($row['detalhes_json']) ? trim((string) $row['detalhes_json']) : '';
+            if ($detalhesRaw !== '') {
+                $parsed = json_decode($detalhesRaw, true);
+                if (is_array($parsed)) {
+                    $detalhes = $parsed;
+                }
+            }
+
+            $row['detalhes'] = $detalhes;
+            $resultado[] = $row;
+        }
+
+        return $resultado;
+    }
+
+    /**
      * @return array<string, mixed>|null
      */
     public function findAprendizadoRegra(int $empresaId, string $tipoAlerta): ?array

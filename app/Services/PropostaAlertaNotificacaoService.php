@@ -196,6 +196,7 @@ class PropostaAlertaNotificacaoService
             ],
             'escalonados' => [],
             'aprendizado' => [],
+            'evidencias' => [],
         ];
         try {
             $orquestrador = $this->orquestradorService->obterParaDashboard($empresaId, max(3, min(8, $limit)));

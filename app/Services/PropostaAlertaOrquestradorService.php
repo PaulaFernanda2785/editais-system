@@ -101,14 +101,19 @@ class PropostaAlertaOrquestradorService
                 ],
                 'escalonados' => [],
                 'aprendizado' => [],
+                'evidencias' => [],
             ];
         }
+
+        $limitEscalonados = max(1, $limitEscalonados);
+        $limitEvidencias = max(5, min(20, $limitEscalonados * 2));
 
         return [
             'ativo' => true,
             'resumo' => $this->playbookRepository->resumoOperacionalDashboard($empresaId),
             'escalonados' => $this->playbookRepository->listarEscalonadosDashboard($empresaId, $limitEscalonados),
             'aprendizado' => $this->playbookRepository->listarAprendizadoDashboard($empresaId),
+            'evidencias' => $this->playbookRepository->listarEventosRecentesDashboard($empresaId, $limitEvidencias),
         ];
     }
 
@@ -254,6 +259,7 @@ class PropostaAlertaOrquestradorService
             $resumo = $this->playbookRepository->resumoTarefas($playbookId, $empresaId);
             $progresso = $this->calcularProgressoPercentual($resumo);
             $statusAtual = (string) ($playbook['status'] ?? 'ATIVO');
+            $progressoAtual = isset($playbook['progresso_percentual']) ? (float) $playbook['progresso_percentual'] : 0.0;
             $novoStatus = $statusAtual === 'ESCALADO'
                 ? 'ESCALADO'
                 : ($progresso > 0.0 ? 'EM_PROGRESSO' : 'ATIVO');
@@ -275,6 +281,23 @@ class PropostaAlertaOrquestradorService
                 $primeiraAtividade !== null ? (string) $primeiraAtividade : null,
                 $ultimaAtividade !== null ? (string) $ultimaAtividade : null
             );
+
+            $mudouProgresso = abs($progresso - $progressoAtual) >= 0.01;
+            $mudouStatus = $novoStatus !== $statusAtual;
+            if ($mudouProgresso || $mudouStatus) {
+                $this->playbookRepository->registrarEvento(
+                    $playbookId,
+                    $empresaId,
+                    'PROGRESSO_ATUALIZADO',
+                    'Progresso e status recalculados automaticamente pelas tarefas do playbook.',
+                    [
+                        'progresso_anterior' => round($progressoAtual, 2),
+                        'progresso_atual' => round($progresso, 2),
+                        'status_anterior' => $statusAtual,
+                        'status_atual' => $novoStatus,
+                    ]
+                );
+            }
 
             $prazoSla = $this->parseDateTime(isset($playbook['prazo_sla_em']) ? (string) $playbook['prazo_sla_em'] : null);
             $escalonadoEm = $this->parseDateTime(isset($playbook['escalonado_em']) ? (string) $playbook['escalonado_em'] : null);

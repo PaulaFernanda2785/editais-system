@@ -1,9 +1,9 @@
-param(
+﻿param(
     [int] $EmpresaId = 0,
     [int] $Limite = 0,
     [switch] $SemEmail,
     [string] $PhpPath = "php",
-    [string] $ScriptPath = "scripts/processar-alertas-proativos.php"
+    [string] $ScriptPath = "scripts/alertas-proativos-cli.php"
 )
 
 Set-StrictMode -Version Latest

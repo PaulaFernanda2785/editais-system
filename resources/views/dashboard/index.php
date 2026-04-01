@@ -29,6 +29,9 @@ $orquestradorEscalonados = isset($orquestrador['escalonados']) && is_array($orqu
 $orquestradorAprendizado = isset($orquestrador['aprendizado']) && is_array($orquestrador['aprendizado'])
     ? $orquestrador['aprendizado']
     : [];
+$orquestradorEvidencias = isset($orquestrador['evidencias']) && is_array($orquestrador['evidencias'])
+    ? $orquestrador['evidencias']
+    : [];
 
 $nome = htmlspecialchars((string) ($auth['nome'] ?? 'Usuario'), ENT_QUOTES, 'UTF-8');
 $email = htmlspecialchars((string) ($auth['email'] ?? '-'), ENT_QUOTES, 'UTF-8');
@@ -290,6 +293,59 @@ $isAdmin = in_array(strtoupper($perfilRaw), ['SUPER_ADMIN', 'ADMIN'], true);
                                 - progresso <?= number_format($progresso, 1, ',', '.') ?>%
                                 - responsavel <?= htmlspecialchars((string) ($item['responsavel_nome'] ?? '-'), ENT_QUOTES, 'UTF-8') ?>
                                 - SLA <?= htmlspecialchars((string) ($item['prazo_sla_em'] ?? '-'), ENT_QUOTES, 'UTF-8') ?>
+                            </li>
+                        <?php endforeach; ?>
+                    </ul>
+                <?php endif; ?>
+
+                <h4>Trilha de evidencia (eventos recentes)</h4>
+                <?php if ($orquestradorEvidencias === []): ?>
+                    <p class="muted">Sem eventos registrados para exibicao.</p>
+                <?php else: ?>
+                    <ul>
+                        <?php foreach ($orquestradorEvidencias as $evento): ?>
+                            <?php
+                                $tipoEvento = strtoupper((string) ($evento['tipo_evento'] ?? ''));
+                                $tipoEventoLabel = match ($tipoEvento) {
+                                    'PLAYBOOK_CRIADO' => 'PLAYBOOK CRIADO',
+                                    'PROGRESSO_ATUALIZADO' => 'PROGRESSO',
+                                    'ESCALONADO' => 'ESCALONADO',
+                                    'ENCERRADO' => 'ENCERRADO',
+                                    'REABERTO' => 'REABERTO',
+                                    default => $tipoEvento !== '' ? $tipoEvento : 'EVENTO',
+                                };
+                                $detalhesEvento = isset($evento['detalhes']) && is_array($evento['detalhes'])
+                                    ? $evento['detalhes']
+                                    : [];
+                                $resumoDetalhe = '';
+                                if ($tipoEvento === 'PROGRESSO_ATUALIZADO') {
+                                    $anterior = isset($detalhesEvento['progresso_anterior']) ? (float) $detalhesEvento['progresso_anterior'] : null;
+                                    $atual = isset($detalhesEvento['progresso_atual']) ? (float) $detalhesEvento['progresso_atual'] : null;
+                                    if ($anterior !== null && $atual !== null) {
+                                        $resumoDetalhe = ' | progresso ' . number_format($anterior, 1, ',', '.') . '% -> '
+                                            . number_format($atual, 1, ',', '.') . '%';
+                                    }
+                                } elseif ($tipoEvento === 'ESCALONADO') {
+                                    $motivo = trim((string) ($detalhesEvento['motivo'] ?? ''));
+                                    if ($motivo !== '') {
+                                        $resumoDetalhe = ' | motivo: ' . $motivo;
+                                    }
+                                } elseif ($tipoEvento === 'ENCERRADO') {
+                                    $resultadoWinLoss = strtoupper(trim((string) ($detalhesEvento['resultado_win_loss'] ?? '')));
+                                    if ($resultadoWinLoss !== '') {
+                                        $resumoDetalhe = ' | resultado: ' . $resultadoWinLoss;
+                                    }
+                                }
+                            ?>
+                            <li>
+                                <span class="badge badge-type"><?= htmlspecialchars($tipoEventoLabel, ENT_QUOTES, 'UTF-8') ?></span>
+                                <?= htmlspecialchars((string) ($evento['criado_em'] ?? '-'), ENT_QUOTES, 'UTF-8') ?>
+                                - Playbook #<?= (int) ($evento['playbook_id'] ?? 0) ?>
+                                - <a href="/propostas/<?= (int) ($evento['proposta_id'] ?? 0) ?>">
+                                    Proposta #<?= (int) ($evento['proposta_id'] ?? 0) ?>
+                                </a>
+                                - <?= htmlspecialchars((string) ($evento['descricao'] ?? '-'), ENT_QUOTES, 'UTF-8') ?>
+                                <?= htmlspecialchars($resumoDetalhe, ENT_QUOTES, 'UTF-8') ?>
                             </li>
                         <?php endforeach; ?>
                     </ul>

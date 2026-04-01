@@ -8,4 +8,4 @@ if (PHP_SAPI !== 'cli') {
     exit;
 }
 
-require __DIR__ . '/scripts/processar-alertas-proativos.php';
+require __DIR__ . '/scripts/alertas-proativos-cli.php';
