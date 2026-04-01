@@ -281,6 +281,7 @@ $isAdmin = in_array(strtoupper($perfilRaw), ['SUPER_ADMIN', 'ADMIN'], true);
                                     ? 'badge-prio-alta'
                                     : ($prioridade === 'BAIXA' ? 'badge-prio-baixa' : 'badge-prio-media');
                                 $progresso = (float) ($item['progresso_percentual'] ?? 0);
+                                $nivelEscalonamento = max(1, (int) ($item['escalonamento_nivel'] ?? 1));
                             ?>
                             <li>
                                 <span class="badge badge-escalado">ESCALADO</span>
@@ -291,6 +292,7 @@ $isAdmin = in_array(strtoupper($perfilRaw), ['SUPER_ADMIN', 'ADMIN'], true);
                                 </a>
                                 - <?= htmlspecialchars((string) ($item['orgao_nome'] ?? '-'), ENT_QUOTES, 'UTF-8') ?>
                                 - progresso <?= number_format($progresso, 1, ',', '.') ?>%
+                                - nivel L<?= $nivelEscalonamento ?>
                                 - responsavel <?= htmlspecialchars((string) ($item['responsavel_nome'] ?? '-'), ENT_QUOTES, 'UTF-8') ?>
                                 - SLA <?= htmlspecialchars((string) ($item['prazo_sla_em'] ?? '-'), ENT_QUOTES, 'UTF-8') ?>
                             </li>
@@ -327,8 +329,12 @@ $isAdmin = in_array(strtoupper($perfilRaw), ['SUPER_ADMIN', 'ADMIN'], true);
                                     }
                                 } elseif ($tipoEvento === 'ESCALONADO') {
                                     $motivo = trim((string) ($detalhesEvento['motivo'] ?? ''));
+                                    $nivelEvento = isset($detalhesEvento['escalonamento_nivel']) ? (int) $detalhesEvento['escalonamento_nivel'] : 0;
+                                    if ($nivelEvento > 0) {
+                                        $resumoDetalhe = ' | nivel L' . $nivelEvento;
+                                    }
                                     if ($motivo !== '') {
-                                        $resumoDetalhe = ' | motivo: ' . $motivo;
+                                        $resumoDetalhe .= ' | motivo: ' . $motivo;
                                     }
                                 } elseif ($tipoEvento === 'ENCERRADO') {
                                     $resultadoWinLoss = strtoupper(trim((string) ($detalhesEvento['resultado_win_loss'] ?? '')));

@@ -247,6 +247,8 @@ class PropostaAlertaOrquestradorService
     {
         $escalonados = 0;
         $limite = $this->envInt('ALERTA_PLAYBOOK_PROCESSAMENTO_LIMITE', 300);
+        $maxNivelEscalonamento = max(1, min(5, $this->envInt('ALERTA_PLAYBOOK_ESCALONAMENTO_MAX_NIVEL', 3)));
+        $intervaloReescalaHoras = max(1, min(168, $this->envInt('ALERTA_PLAYBOOK_ESCALONAMENTO_INTERVALO_HORAS', 12)));
         $agora = new DateTimeImmutable('now');
         $playbooks = $this->playbookRepository->listarAtivosParaProcessamento($empresaId, $limite);
 
@@ -301,28 +303,63 @@ class PropostaAlertaOrquestradorService
 
             $prazoSla = $this->parseDateTime(isset($playbook['prazo_sla_em']) ? (string) $playbook['prazo_sla_em'] : null);
             $escalonadoEm = $this->parseDateTime(isset($playbook['escalonado_em']) ? (string) $playbook['escalonado_em'] : null);
-            $deveEscalonar = $progresso <= 0.0
-                && $escalonadoEm === null
-                && $prazoSla instanceof DateTimeImmutable
-                && $agora > $prazoSla;
+            $nivelAtual = isset($playbook['escalonamento_nivel']) ? (int) $playbook['escalonamento_nivel'] : 0;
+            if ($nivelAtual < 0) {
+                $nivelAtual = 0;
+            }
 
-            if (!$deveEscalonar) {
+            $slaExpirado = $prazoSla instanceof DateTimeImmutable && $agora > $prazoSla;
+            $semProgresso = $progresso <= 0.0;
+            if (!$slaExpirado || !$semProgresso) {
                 continue;
             }
 
-            $motivo = 'SLA ultrapassado sem avanco do playbook automatico.';
-            $ok = $this->playbookRepository->marcarEscalonado($playbookId, $empresaId, 1, $motivo);
+            $escalaInicial = $escalonadoEm === null && $nivelAtual <= 0;
+            if ($escalaInicial) {
+                $nivelDestino = 1;
+                $motivo = 'SLA ultrapassado sem avanco do playbook automatico.';
+                $ok = $this->playbookRepository->marcarEscalonado($playbookId, $empresaId, $nivelDestino, $motivo);
+            } else {
+                if (!$escalonadoEm instanceof DateTimeImmutable) {
+                    continue;
+                }
+
+                if ($nivelAtual >= $maxNivelEscalonamento) {
+                    continue;
+                }
+
+                $proximaEscalada = $escalonadoEm->modify('+' . $intervaloReescalaHoras . ' hours');
+                if ($proximaEscalada instanceof DateTimeImmutable && $agora <= $proximaEscalada) {
+                    continue;
+                }
+
+                $nivelDestino = $nivelAtual + 1;
+                $motivo = 'Sem avanco apos escalonamento anterior; reescalonamento automatico para L' . $nivelDestino . '.';
+                $ok = $this->playbookRepository->atualizarEscalonamentoNivel(
+                    $playbookId,
+                    $empresaId,
+                    $nivelDestino,
+                    $motivo
+                );
+            }
+
             if (!$ok) {
                 continue;
             }
 
             $escalonados++;
+            $playbookEscalonado = $playbook;
+            $playbookEscalonado['escalonamento_nivel'] = $nivelDestino;
             $this->playbookRepository->registrarEvento(
                 $playbookId,
                 $empresaId,
                 'ESCALONADO',
-                'Escalonamento automatico executado por ausencia de progresso.',
+                $escalaInicial
+                    ? 'Escalonamento automatico inicial executado por ausencia de progresso.'
+                    : 'Reescalonamento automatico executado por ausencia de progresso.',
                 [
+                    'escalonamento_nivel' => $nivelDestino,
+                    'escalonamento_anterior' => $nivelAtual,
                     'motivo' => $motivo,
                     'prazo_sla_em' => isset($playbook['prazo_sla_em']) ? (string) $playbook['prazo_sla_em'] : null,
                     'progresso_percentual' => $progresso,
@@ -336,6 +373,8 @@ class PropostaAlertaOrquestradorService
                 'proposta_alerta_playbooks',
                 $playbookId,
                 [
+                    'escalonamento_nivel' => $nivelDestino,
+                    'escalonamento_anterior' => $nivelAtual,
                     'motivo' => $motivo,
                     'progresso_percentual' => $progresso,
                     'proposta_id' => (int) ($playbook['proposta_id'] ?? 0),
@@ -347,7 +386,7 @@ class PropostaAlertaOrquestradorService
             );
 
             if ($enviarEmailEscalonamento) {
-                $this->enviarEmailEscalonamento($empresaId, $playbook, $motivo);
+                $this->enviarEmailEscalonamento($empresaId, $playbookEscalonado, $motivo);
             }
         }
 
@@ -460,7 +499,8 @@ class PropostaAlertaOrquestradorService
             }
 
             $appName = $this->envString('APP_NAME', 'SaaS Editais');
-            $subject = '[' . $appName . '] Escalonamento automatico de alerta de proposta';
+            $nivelEscalonamento = max(1, (int) ($playbook['escalonamento_nivel'] ?? 1));
+            $subject = '[' . $appName . '] Escalonamento automatico L' . $nivelEscalonamento . ' de alerta de proposta';
             $fromAddress = trim($this->envString('ALERTA_EMAIL_FROM', 'no-reply@localhost'));
             $fromName = trim($this->envString('ALERTA_EMAIL_NOME', $appName));
             $dashboardUrl = rtrim($this->envString('APP_URL', ''), '/') . '/dashboard';
@@ -476,6 +516,7 @@ class PropostaAlertaOrquestradorService
             $linhas[] = 'Playbook: #' . (int) ($playbook['id'] ?? 0);
             $linhas[] = 'Proposta: #' . (int) ($playbook['proposta_id'] ?? 0);
             $linhas[] = 'Tipo de alerta: ' . $rotuloTipo;
+            $linhas[] = 'Nivel de escalonamento: L' . $nivelEscalonamento;
             $linhas[] = 'Prioridade: ' . (string) ($playbook['prioridade'] ?? 'MEDIA');
             $linhas[] = 'Responsavel: ' . (string) ($playbook['responsavel_nome'] ?? 'Nao definido');
             $linhas[] = 'Prazo SLA: ' . (string) ($playbook['prazo_sla_em'] ?? '-');

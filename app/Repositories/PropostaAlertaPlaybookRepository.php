@@ -393,6 +393,34 @@ class PropostaAlertaPlaybookRepository
         return $stmt->rowCount() > 0;
     }
 
+    public function atualizarEscalonamentoNivel(
+        int $playbookId,
+        int $empresaId,
+        int $nivel,
+        string $motivo
+    ): bool {
+        $stmt = $this->pdo->prepare(
+            'UPDATE proposta_alerta_playbooks
+            SET
+                status = \'ESCALADO\',
+                escalonado_em = NOW(),
+                escalonamento_nivel = :escalonamento_nivel,
+                escalonamento_motivo = :escalonamento_motivo,
+                atualizado_em = NOW()
+            WHERE id = :id
+              AND empresa_id = :empresa_id
+              AND escalonamento_nivel < :escalonamento_nivel'
+        );
+        $stmt->execute([
+            'escalonamento_nivel' => $nivel,
+            'escalonamento_motivo' => $this->truncate($motivo, 255),
+            'id' => $playbookId,
+            'empresa_id' => $empresaId,
+        ]);
+
+        return $stmt->rowCount() > 0;
+    }
+
     public function encerrar(
         int $playbookId,
         int $empresaId,
