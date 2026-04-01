@@ -8,7 +8,10 @@ $tenant = isset($tenant) && is_array($tenant) ? $tenant : [];
 $proposta = isset($proposta) ? $proposta : null;
 $favorito = isset($favorito) ? $favorito : null;
 $tarefas = isset($tarefas) && is_array($tarefas) ? $tarefas : [];
-$statusPermitidos = isset($statusPermitidos) && is_array($statusPermitidos) ? $statusPermitidos : [];
+$aprovacoes = isset($aprovacoes) && is_array($aprovacoes) ? $aprovacoes : [];
+$submissoes = isset($submissoes) && is_array($submissoes) ? $submissoes : [];
+$aprovacaoPendente = $aprovacaoPendente ?? null;
+$canaisSubmissao = isset($canaisSubmissao) && is_array($canaisSubmissao) ? $canaisSubmissao : [];
 $message = isset($message) ? (string) $message : null;
 
 if ($proposta === null) {
@@ -18,13 +21,38 @@ if ($proposta === null) {
 
 $usuarioNome = htmlspecialchars((string) ($auth['nome'] ?? 'Usuario'), ENT_QUOTES, 'UTF-8');
 $empresaNome = htmlspecialchars((string) ($tenant['nome_fantasia'] ?? $tenant['razao_social'] ?? 'Empresa'), ENT_QUOTES, 'UTF-8');
+$statusAtual = strtoupper((string) ($proposta->status ?? 'RASCUNHO'));
 
-$badgeStatusClass = match (strtoupper((string) ($proposta->status ?? 'RASCUNHO'))) {
+$badgeStatusClass = match ($statusAtual) {
     'EM_REVISAO' => 'badge-revisao',
     'APROVADA' => 'badge-aprovada',
     'ENVIADA' => 'badge-enviada',
     default => 'badge-rascunho',
 };
+
+$formatarDataHora = static function (?string $value): string {
+    if ($value === null || trim($value) === '') {
+        return '-';
+    }
+
+    $raw = trim($value);
+    $formatos = ['Y-m-d H:i:s', 'Y-m-d H:i', 'Y-m-d'];
+    foreach ($formatos as $formato) {
+        $date = DateTimeImmutable::createFromFormat($formato, $raw);
+        if ($date instanceof DateTimeImmutable) {
+            return $date->format($formato === 'Y-m-d' ? 'd/m/Y' : 'd/m/Y H:i');
+        }
+    }
+
+    $timestamp = strtotime($raw);
+    if ($timestamp === false) {
+        return $raw;
+    }
+
+    return date('d/m/Y H:i', $timestamp);
+};
+
+$dataSubmissaoDefault = date('Y-m-d\\TH:i');
 ?>
 <!doctype html>
 <html lang="pt-BR">
@@ -49,6 +77,9 @@ $badgeStatusClass = match (strtoupper((string) ($proposta->status ?? 'RASCUNHO')
         .badge-revisao { background: #ffedd5; color: #9a3412; }
         .badge-aprovada { background: #dcfce7; color: #166534; }
         .badge-enviada { background: #dbeafe; color: #1d4ed8; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; border: 1px solid #dfe6f0; }
+        th, td { padding: 10px; border-bottom: 1px solid #e8edf5; text-align: left; vertical-align: top; }
+        th { background: #f8fafc; }
         ul { margin: 8px 0 0 18px; padding: 0; }
     </style>
 </head>
@@ -111,26 +142,101 @@ $badgeStatusClass = match (strtoupper((string) ($proposta->status ?? 'RASCUNHO')
         </section>
 
         <section class="panel">
+            <h3>Workflow de aprovacao e envio</h3>
+            <p class="muted">Fluxo controlado: RASCUNHO -> EM_REVISAO -> APROVADA -> ENVIADA.</p>
+
+            <?php if ($statusAtual === 'RASCUNHO'): ?>
+                <form method="POST" action="/propostas/<?= (int) $proposta->id ?>/solicitar-aprovacao">
+                    <label for="observacao_solicitacao">Contexto para aprovacao</label>
+                    <textarea id="observacao_solicitacao" name="observacao_solicitacao" rows="4" placeholder="Ex.: proposta revisada pela area tecnica, pronta para validacao comercial."></textarea>
+                    <div class="actions" style="margin-top: 10px;">
+                        <button class="btn btn-primary" type="submit">Solicitar aprovacao</button>
+                    </div>
+                </form>
+            <?php elseif ($statusAtual === 'EM_REVISAO'): ?>
+                <?php if ($aprovacaoPendente !== null): ?>
+                    <p class="muted">
+                        Solicitacao pendente #<?= (int) $aprovacaoPendente->id ?>
+                        (aberta em <?= htmlspecialchars($formatarDataHora($aprovacaoPendente->solicitadoEm ?? null), ENT_QUOTES, 'UTF-8') ?>).
+                    </p>
+                    <form method="POST" action="/propostas/<?= (int) $proposta->id ?>/decisao-aprovacao">
+                        <input type="hidden" name="aprovacao_id" value="<?= (int) $aprovacaoPendente->id ?>">
+                        <div class="grid">
+                            <article>
+                                <label for="decisao">Decisao</label>
+                                <select id="decisao" name="decisao">
+                                    <option value="APROVADA">Aprovar</option>
+                                    <option value="REPROVADA">Reprovar</option>
+                                </select>
+                            </article>
+                            <article style="grid-column: 1 / -1;">
+                                <label for="parecer">Parecer</label>
+                                <textarea id="parecer" name="parecer" rows="4" placeholder="Ex.: aprovado com ajuste no cronograma e no valor final."></textarea>
+                            </article>
+                        </div>
+                        <div class="actions" style="margin-top: 10px;">
+                            <button class="btn btn-primary" type="submit">Registrar decisao</button>
+                        </div>
+                    </form>
+                <?php else: ?>
+                    <p class="muted">Nao existe solicitacao pendente no momento. Reenvie para aprovacao se necessario.</p>
+                <?php endif; ?>
+            <?php elseif ($statusAtual === 'APROVADA'): ?>
+                <form method="POST" action="/propostas/<?= (int) $proposta->id ?>/registrar-submissao">
+                    <div class="grid">
+                        <article>
+                            <label for="canal">Canal de envio</label>
+                            <select id="canal" name="canal">
+                                <?php foreach ($canaisSubmissao as $canal): ?>
+                                    <option value="<?= htmlspecialchars((string) $canal, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars((string) $canal, ENT_QUOTES, 'UTF-8') ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </article>
+                        <article>
+                            <label for="protocolo">Protocolo</label>
+                            <input id="protocolo" name="protocolo" type="text" maxlength="150" placeholder="Numero do protocolo">
+                        </article>
+                        <article>
+                            <label for="data_submissao">Data/hora da submissao</label>
+                            <input id="data_submissao" name="data_submissao" type="datetime-local" value="<?= htmlspecialchars($dataSubmissaoDefault, ENT_QUOTES, 'UTF-8') ?>">
+                        </article>
+                        <article>
+                            <label for="valor_enviado">Valor enviado (R$)</label>
+                            <input id="valor_enviado" name="valor_enviado" type="number" min="0" step="0.01" value="<?= htmlspecialchars((string) ($proposta->valorProposta ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+                        </article>
+                        <article style="grid-column: 1 / -1;">
+                            <label for="link_comprovante">Link do comprovante</label>
+                            <input id="link_comprovante" name="link_comprovante" type="url" maxlength="500" placeholder="https://...">
+                        </article>
+                        <article style="grid-column: 1 / -1;">
+                            <label for="observacao_submissao">Observacao da submissao</label>
+                            <textarea id="observacao_submissao" name="observacao" rows="4"></textarea>
+                        </article>
+                    </div>
+                    <div class="actions" style="margin-top: 10px;">
+                        <button class="btn btn-primary" type="submit">Registrar submissao</button>
+                    </div>
+                </form>
+            <?php else: ?>
+                <p class="muted">Envio ja registrado. Consulte o historico de submissao abaixo.</p>
+            <?php endif; ?>
+        </section>
+
+        <section class="panel">
             <h3>Edicao da proposta</h3>
             <form method="POST" action="/propostas/<?= (int) $proposta->id ?>">
                 <div class="grid">
-                    <article>
-                        <label for="status">Status</label>
-                        <select id="status" name="status">
-                            <?php foreach ($statusPermitidos as $status): ?>
-                                <option value="<?= htmlspecialchars((string) $status, ENT_QUOTES, 'UTF-8') ?>" <?= ((string) $proposta->status === (string) $status) ? 'selected' : '' ?>>
-                                    <?= htmlspecialchars((string) $status, ENT_QUOTES, 'UTF-8') ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
+                    <article style="grid-column: 1 / -1;">
+                        <label for="titulo">Titulo</label>
+                        <input id="titulo" name="titulo" type="text" maxlength="220" value="<?= htmlspecialchars((string) ($proposta->titulo ?? ''), ENT_QUOTES, 'UTF-8') ?>">
                     </article>
                     <article>
                         <label for="valor_proposta">Valor da proposta (R$)</label>
                         <input id="valor_proposta" name="valor_proposta" type="number" min="0" step="0.01" value="<?= htmlspecialchars((string) ($proposta->valorProposta ?? ''), ENT_QUOTES, 'UTF-8') ?>">
                     </article>
-                    <article style="grid-column: 1 / -1;">
-                        <label for="titulo">Titulo</label>
-                        <input id="titulo" name="titulo" type="text" maxlength="220" value="<?= htmlspecialchars((string) ($proposta->titulo ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+                    <article>
+                        <label>Status atual</label>
+                        <input type="text" value="<?= htmlspecialchars($statusAtual, ENT_QUOTES, 'UTF-8') ?>" readonly>
                     </article>
                     <article style="grid-column: 1 / -1;">
                         <label for="resumo_executivo">Resumo executivo</label>
@@ -165,6 +271,87 @@ $badgeStatusClass = match (strtoupper((string) ($proposta->status ?? 'RASCUNHO')
                     <button class="btn btn-primary" type="submit">Salvar proposta</button>
                 </div>
             </form>
+        </section>
+
+        <section class="panel">
+            <h3>Historico de aprovacoes</h3>
+            <?php if ($aprovacoes === []): ?>
+                <p class="muted">Nenhuma solicitacao de aprovacao registrada.</p>
+            <?php else: ?>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Solicitacao</th>
+                            <th>Decisao</th>
+                            <th>Parecer</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($aprovacoes as $aprovacao): ?>
+                            <tr>
+                                <td>#<?= (int) ($aprovacao->id ?? 0) ?></td>
+                                <td>
+                                    <strong><?= htmlspecialchars((string) ($aprovacao->statusDecisao ?? '-'), ENT_QUOTES, 'UTF-8') ?></strong><br>
+                                    <span class="muted">Por: <?= htmlspecialchars((string) ($aprovacao->solicitadoPorUsuarioNome ?? '-'), ENT_QUOTES, 'UTF-8') ?></span><br>
+                                    <span class="muted">Em: <?= htmlspecialchars($formatarDataHora($aprovacao->solicitadoEm ?? null), ENT_QUOTES, 'UTF-8') ?></span>
+                                </td>
+                                <td>
+                                    <span class="muted">Decisor: <?= htmlspecialchars((string) ($aprovacao->decididoPorUsuarioNome ?? '-'), ENT_QUOTES, 'UTF-8') ?></span><br>
+                                    <span class="muted">Quando: <?= htmlspecialchars($formatarDataHora($aprovacao->decididoEm ?? null), ENT_QUOTES, 'UTF-8') ?></span>
+                                </td>
+                                <td><?= nl2br(htmlspecialchars((string) ($aprovacao->parecer ?? $aprovacao->observacaoSolicitacao ?? '-'), ENT_QUOTES, 'UTF-8')) ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            <?php endif; ?>
+        </section>
+
+        <section class="panel">
+            <h3>Historico de submissoes</h3>
+            <?php if ($submissoes === []): ?>
+                <p class="muted">Nenhuma submissao registrada.</p>
+            <?php else: ?>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Canal</th>
+                            <th>Data</th>
+                            <th>Valor</th>
+                            <th>Protocolo</th>
+                            <th>Responsavel</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($submissoes as $submissao): ?>
+                            <tr>
+                                <td>#<?= (int) ($submissao->id ?? 0) ?></td>
+                                <td><?= htmlspecialchars((string) ($submissao->canal ?? '-'), ENT_QUOTES, 'UTF-8') ?></td>
+                                <td><?= htmlspecialchars($formatarDataHora($submissao->dataSubmissao ?? null), ENT_QUOTES, 'UTF-8') ?></td>
+                                <td>
+                                    <?= $submissao->valorEnviado !== null
+                                        ? 'R$ ' . number_format((float) $submissao->valorEnviado, 2, ',', '.')
+                                        : '-' ?>
+                                </td>
+                                <td>
+                                    <?= htmlspecialchars((string) ($submissao->protocolo ?? '-'), ENT_QUOTES, 'UTF-8') ?>
+                                    <?php if (!empty($submissao->linkComprovante)): ?>
+                                        <br><a href="<?= htmlspecialchars((string) $submissao->linkComprovante, ENT_QUOTES, 'UTF-8') ?>" target="_blank" rel="noopener noreferrer">Comprovante</a>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <?= htmlspecialchars((string) ($submissao->usuarioNome ?? '-'), ENT_QUOTES, 'UTF-8') ?>
+                                    <?php if (!empty($submissao->observacao)): ?>
+                                        <br><span class="muted"><?= nl2br(htmlspecialchars((string) $submissao->observacao, ENT_QUOTES, 'UTF-8')) ?></span>
+                                    <?php endif; ?>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            <?php endif; ?>
         </section>
 
         <section class="panel">

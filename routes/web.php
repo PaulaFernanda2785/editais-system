@@ -180,6 +180,21 @@ $router->post('/propostas/{id}', 'PropostaController@update', [
     TenantMiddleware::class,
     AssinaturaMiddleware::class,
 ]);
+$router->post('/propostas/{id}/solicitar-aprovacao', 'PropostaController@solicitarAprovacao', [
+    AuthMiddleware::class,
+    TenantMiddleware::class,
+    AssinaturaMiddleware::class,
+]);
+$router->post('/propostas/{id}/decisao-aprovacao', 'PropostaController@decidirAprovacao', [
+    AuthMiddleware::class,
+    TenantMiddleware::class,
+    AssinaturaMiddleware::class,
+]);
+$router->post('/propostas/{id}/registrar-submissao', 'PropostaController@registrarSubmissao', [
+    AuthMiddleware::class,
+    TenantMiddleware::class,
+    AssinaturaMiddleware::class,
+]);
 
 $router->get('/fontes', 'FonteController@index', [
     AuthMiddleware::class,

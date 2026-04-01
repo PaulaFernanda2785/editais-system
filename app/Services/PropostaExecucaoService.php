@@ -6,12 +6,26 @@ namespace App\Services;
 
 use App\Repositories\FavoritoRepository;
 use App\Repositories\FavoritoTarefaRepository;
+use App\Repositories\PropostaAprovacaoRepository;
 use App\Repositories\PropostaExecucaoRepository;
+use App\Repositories\PropostaSubmissaoRepository;
 use DateTimeImmutable;
 
 class PropostaExecucaoService
 {
+    /**
+     * @var array<int, string>
+     */
+    private const STATUS_PERMITIDOS = ['RASCUNHO', 'EM_REVISAO', 'APROVADA', 'ENVIADA'];
+
+    /**
+     * @var array<int, string>
+     */
+    private const CANAIS_SUBMISSAO = ['PORTAL', 'EMAIL', 'PRESENCIAL', 'OUTRO'];
+
     private PropostaExecucaoRepository $propostaRepository;
+    private PropostaAprovacaoRepository $aprovacaoRepository;
+    private PropostaSubmissaoRepository $submissaoRepository;
     private FavoritoRepository $favoritoRepository;
     private FavoritoTarefaRepository $tarefaRepository;
     private LogService $logService;
@@ -19,12 +33,16 @@ class PropostaExecucaoService
 
     public function __construct(
         ?PropostaExecucaoRepository $propostaRepository = null,
+        ?PropostaAprovacaoRepository $aprovacaoRepository = null,
+        ?PropostaSubmissaoRepository $submissaoRepository = null,
         ?FavoritoRepository $favoritoRepository = null,
         ?FavoritoTarefaRepository $tarefaRepository = null,
         ?LogService $logService = null,
         ?AuditService $auditService = null
     ) {
         $this->propostaRepository = $propostaRepository ?? new PropostaExecucaoRepository();
+        $this->aprovacaoRepository = $aprovacaoRepository ?? new PropostaAprovacaoRepository();
+        $this->submissaoRepository = $submissaoRepository ?? new PropostaSubmissaoRepository();
         $this->favoritoRepository = $favoritoRepository ?? new FavoritoRepository();
         $this->tarefaRepository = $tarefaRepository ?? new FavoritoTarefaRepository();
         $this->logService = $logService ?? new LogService();
@@ -54,7 +72,7 @@ class PropostaExecucaoService
         );
         $resultado['sort'] = $sort;
         $resultado['filters'] = $filters;
-        $resultado['status_permitidos'] = ['RASCUNHO', 'EM_REVISAO', 'APROVADA', 'ENVIADA'];
+        $resultado['status_permitidos'] = self::STATUS_PERMITIDOS;
 
         return $resultado;
     }
@@ -71,12 +89,18 @@ class PropostaExecucaoService
 
         $favorito = $this->favoritoRepository->findByIdAndEmpresa($proposta->favoritoId, $empresaId);
         $tarefas = $this->tarefaRepository->listByFavorito($proposta->favoritoId, $empresaId);
+        $aprovacoes = $this->aprovacaoRepository->listByProposta($propostaId, $empresaId);
+        $submissoes = $this->submissaoRepository->listByProposta($propostaId, $empresaId);
 
         return [
             'proposta' => $proposta,
             'favorito' => $favorito,
             'tarefas' => $tarefas,
-            'status_permitidos' => ['RASCUNHO', 'EM_REVISAO', 'APROVADA', 'ENVIADA'],
+            'aprovacoes' => $aprovacoes,
+            'submissoes' => $submissoes,
+            'aprovacao_pendente' => $this->aprovacaoRepository->findPendenteByProposta($propostaId, $empresaId),
+            'status_permitidos' => self::STATUS_PERMITIDOS,
+            'canais_submissao' => self::CANAIS_SUBMISSAO,
         ];
     }
 
@@ -157,13 +181,8 @@ class PropostaExecucaoService
             ];
         }
 
-        $status = strtoupper(trim((string) ($payload['status'] ?? 'RASCUNHO')));
-        if (!in_array($status, ['RASCUNHO', 'EM_REVISAO', 'APROVADA', 'ENVIADA'], true)) {
-            $status = 'RASCUNHO';
-        }
-
         $this->propostaRepository->updateById($propostaId, $empresaId, [
-            'status' => $status,
+            'status' => $proposta->status,
             'titulo' => (string) ($payload['titulo'] ?? $proposta->titulo),
             'resumo_executivo' => $payload['resumo_executivo'] ?? $proposta->resumoExecutivo,
             'estrategia_proposta' => $payload['estrategia_proposta'] ?? $proposta->estrategiaProposta,
@@ -182,14 +201,14 @@ class PropostaExecucaoService
             'empresa_id' => $empresaId,
             'usuario_id' => $usuarioId,
             'proposta_id' => $propostaId,
-            'status' => $status,
+            'status' => $proposta->status,
         ]);
 
         $this->auditService->record(
             'PROPOSTA_ATUALIZADA',
             'propostas_execucao',
             $propostaId,
-            ['status' => $status],
+            ['status' => $proposta->status],
             $empresaId,
             $usuarioId
         );
@@ -197,6 +216,226 @@ class PropostaExecucaoService
         return [
             'sucesso' => true,
             'mensagem' => 'Proposta atualizada com sucesso.',
+        ];
+    }
+
+    public function solicitarAprovacao(int $empresaId, ?int $usuarioId, int $propostaId, ?string $observacao): array
+    {
+        $proposta = $this->propostaRepository->findByIdAndEmpresa($propostaId, $empresaId);
+        if ($proposta === null) {
+            return [
+                'sucesso' => false,
+                'mensagem' => 'Proposta nao encontrada.',
+            ];
+        }
+
+        if (strtoupper($proposta->status) !== 'RASCUNHO') {
+            return [
+                'sucesso' => false,
+                'mensagem' => 'Somente propostas em RASCUNHO podem ir para aprovacao.',
+            ];
+        }
+
+        $aprovacaoPendente = $this->aprovacaoRepository->findPendenteByProposta($propostaId, $empresaId);
+        if ($aprovacaoPendente !== null) {
+            return [
+                'sucesso' => false,
+                'mensagem' => 'Ja existe uma solicitacao de aprovacao pendente para esta proposta.',
+            ];
+        }
+
+        $aprovacaoId = $this->aprovacaoRepository->createSolicitacao(
+            $propostaId,
+            $empresaId,
+            $usuarioId,
+            $this->normalizarTextoLimite($observacao, 8000)
+        );
+        $this->propostaRepository->updateStatus($propostaId, $empresaId, 'EM_REVISAO', $usuarioId);
+
+        $this->logService->info('propostas.aprovacao.solicitar', 'Aprovacao solicitada para proposta.', [
+            'empresa_id' => $empresaId,
+            'usuario_id' => $usuarioId,
+            'proposta_id' => $propostaId,
+            'aprovacao_id' => $aprovacaoId,
+        ]);
+
+        $this->auditService->record(
+            'PROPOSTA_APROVACAO_SOLICITADA',
+            'proposta_aprovacoes',
+            $aprovacaoId,
+            [
+                'proposta_id' => $propostaId,
+                'status_proposta_novo' => 'EM_REVISAO',
+            ],
+            $empresaId,
+            $usuarioId
+        );
+
+        return [
+            'sucesso' => true,
+            'mensagem' => 'Solicitacao de aprovacao enviada. Proposta movida para EM_REVISAO.',
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    public function decidirAprovacao(int $empresaId, ?int $usuarioId, int $propostaId, array $payload): array
+    {
+        $proposta = $this->propostaRepository->findByIdAndEmpresa($propostaId, $empresaId);
+        if ($proposta === null) {
+            return [
+                'sucesso' => false,
+                'mensagem' => 'Proposta nao encontrada.',
+            ];
+        }
+
+        if (strtoupper($proposta->status) !== 'EM_REVISAO') {
+            return [
+                'sucesso' => false,
+                'mensagem' => 'A proposta precisa estar EM_REVISAO para receber decisao.',
+            ];
+        }
+
+        $decisao = strtoupper(trim((string) ($payload['decisao'] ?? '')));
+        if (!in_array($decisao, ['APROVADA', 'REPROVADA'], true)) {
+            return [
+                'sucesso' => false,
+                'mensagem' => 'Decisao invalida. Use APROVADA ou REPROVADA.',
+            ];
+        }
+
+        $aprovacaoId = $this->sanitizeInt($payload['aprovacao_id'] ?? 0, 0, 100000000, 0);
+        $aprovacao = $aprovacaoId > 0
+            ? $this->aprovacaoRepository->findByIdAndProposta($aprovacaoId, $propostaId, $empresaId)
+            : $this->aprovacaoRepository->findPendenteByProposta($propostaId, $empresaId);
+
+        if ($aprovacao === null || strtoupper($aprovacao->statusDecisao) !== 'PENDENTE') {
+            return [
+                'sucesso' => false,
+                'mensagem' => 'Nao existe solicitacao pendente para decidir.',
+            ];
+        }
+
+        $parecer = $this->normalizarTextoLimite($payload['parecer'] ?? null, 8000);
+        $ok = $this->aprovacaoRepository->decidir(
+            $aprovacao->id,
+            $propostaId,
+            $empresaId,
+            $decisao,
+            $usuarioId,
+            $parecer
+        );
+
+        if (!$ok) {
+            return [
+                'sucesso' => false,
+                'mensagem' => 'Nao foi possivel registrar a decisao de aprovacao.',
+            ];
+        }
+
+        $statusNovo = $decisao === 'APROVADA' ? 'APROVADA' : 'RASCUNHO';
+        $this->propostaRepository->updateStatus($propostaId, $empresaId, $statusNovo, $usuarioId);
+
+        $this->logService->info('propostas.aprovacao.decidir', 'Decisao de aprovacao registrada.', [
+            'empresa_id' => $empresaId,
+            'usuario_id' => $usuarioId,
+            'proposta_id' => $propostaId,
+            'aprovacao_id' => $aprovacao->id,
+            'decisao' => $decisao,
+            'status_proposta_novo' => $statusNovo,
+        ]);
+
+        $this->auditService->record(
+            'PROPOSTA_APROVACAO_DECIDIDA',
+            'proposta_aprovacoes',
+            $aprovacao->id,
+            [
+                'proposta_id' => $propostaId,
+                'decisao' => $decisao,
+                'status_proposta_novo' => $statusNovo,
+            ],
+            $empresaId,
+            $usuarioId
+        );
+
+        return [
+            'sucesso' => true,
+            'mensagem' => $decisao === 'APROVADA'
+                ? 'Proposta aprovada e pronta para envio.'
+                : 'Proposta reprovada e retornada para RASCUNHO.',
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    public function registrarSubmissao(int $empresaId, ?int $usuarioId, int $propostaId, array $payload): array
+    {
+        $proposta = $this->propostaRepository->findByIdAndEmpresa($propostaId, $empresaId);
+        if ($proposta === null) {
+            return [
+                'sucesso' => false,
+                'mensagem' => 'Proposta nao encontrada.',
+            ];
+        }
+
+        if (strtoupper($proposta->status) !== 'APROVADA') {
+            return [
+                'sucesso' => false,
+                'mensagem' => 'Somente propostas APROVADAS podem ser enviadas.',
+            ];
+        }
+
+        $dataSubmissao = $this->normalizarDataHora($payload['data_submissao'] ?? null);
+        if ($dataSubmissao === null) {
+            return [
+                'sucesso' => false,
+                'mensagem' => 'Data de submissao invalida.',
+            ];
+        }
+
+        $valorEnviado = $payload['valor_enviado'] ?? null;
+        if ($valorEnviado === null || $valorEnviado === '') {
+            $valorEnviado = $proposta->valorProposta;
+        }
+
+        $submissaoId = $this->submissaoRepository->create([
+            'proposta_id' => $propostaId,
+            'empresa_id' => $empresaId,
+            'usuario_id' => $usuarioId,
+            'canal' => $this->normalizarCanal((string) ($payload['canal'] ?? 'PORTAL')),
+            'protocolo' => $payload['protocolo'] ?? null,
+            'data_submissao' => $dataSubmissao,
+            'valor_enviado' => $valorEnviado,
+            'link_comprovante' => $payload['link_comprovante'] ?? null,
+            'observacao' => $payload['observacao'] ?? null,
+        ]);
+
+        $this->propostaRepository->updateStatus($propostaId, $empresaId, 'ENVIADA', $usuarioId);
+
+        $this->logService->info('propostas.submissao.registrar', 'Submissao registrada.', [
+            'empresa_id' => $empresaId,
+            'usuario_id' => $usuarioId,
+            'proposta_id' => $propostaId,
+            'submissao_id' => $submissaoId,
+        ]);
+
+        $this->auditService->record(
+            'PROPOSTA_SUBMISSAO_REGISTRADA',
+            'proposta_submissoes',
+            $submissaoId,
+            [
+                'proposta_id' => $propostaId,
+                'status_proposta_novo' => 'ENVIADA',
+            ],
+            $empresaId,
+            $usuarioId
+        );
+
+        return [
+            'sucesso' => true,
+            'mensagem' => 'Submissao registrada com sucesso. Proposta movida para ENVIADA.',
         ];
     }
 
@@ -343,6 +582,63 @@ class PropostaExecucaoService
         }
 
         return $raw;
+    }
+
+    private function normalizarDataHora(mixed $value): ?string
+    {
+        if ($value === null || trim((string) $value) === '') {
+            return (new DateTimeImmutable('now'))->format('Y-m-d H:i:s');
+        }
+
+        $raw = trim((string) $value);
+        $raw = str_replace('T', ' ', $raw);
+        $formatos = ['Y-m-d H:i:s', 'Y-m-d H:i', 'Y-m-d'];
+
+        foreach ($formatos as $formato) {
+            $date = DateTimeImmutable::createFromFormat($formato, $raw);
+            if ($date instanceof DateTimeImmutable) {
+                if ($formato === 'Y-m-d') {
+                    return $date->format('Y-m-d 00:00:00');
+                }
+
+                return $date->format('Y-m-d H:i:s');
+            }
+        }
+
+        $timestamp = strtotime($raw);
+        if ($timestamp === false) {
+            return null;
+        }
+
+        return (new DateTimeImmutable())->setTimestamp($timestamp)->format('Y-m-d H:i:s');
+    }
+
+    private function normalizarCanal(string $canal): string
+    {
+        $canal = strtoupper(trim($canal));
+        if (!in_array($canal, self::CANAIS_SUBMISSAO, true)) {
+            return 'PORTAL';
+        }
+
+        return $canal;
+    }
+
+    private function normalizarTextoLimite(mixed $value, int $limit): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $text = trim((string) $value);
+        if ($text === '') {
+            return null;
+        }
+
+        if (strlen($text) > $limit) {
+            $text = substr($text, 0, $limit);
+        }
+
+        return $text;
     }
 
     private function sanitizeInt(mixed $value, int $min, int $max, int $default): int

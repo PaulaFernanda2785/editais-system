@@ -311,6 +311,32 @@ class PropostaExecucaoRepository
         return $stmt->rowCount() > 0;
     }
 
+    public function updateStatus(int $id, int $empresaId, string $status, ?int $atualizadoPorUsuarioId): bool
+    {
+        $statusNormalizado = strtoupper(trim($status));
+        if (!in_array($statusNormalizado, ['RASCUNHO', 'EM_REVISAO', 'APROVADA', 'ENVIADA'], true)) {
+            return false;
+        }
+
+        $stmt = $this->pdo->prepare(
+            'UPDATE propostas_execucao
+            SET
+                status = :status,
+                atualizado_por_usuario_id = :atualizado_por_usuario_id,
+                atualizado_em = NOW()
+            WHERE id = :id
+              AND empresa_id = :empresa_id'
+        );
+        $stmt->execute([
+            'status' => $statusNormalizado,
+            'atualizado_por_usuario_id' => $atualizadoPorUsuarioId,
+            'id' => $id,
+            'empresa_id' => $empresaId,
+        ]);
+
+        return $stmt->rowCount() > 0;
+    }
+
     /**
      * @return array<string, int>
      */
