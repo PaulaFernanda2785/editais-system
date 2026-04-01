@@ -22,6 +22,8 @@ class PropostaAlertaOrquestradorService
     private FavoritoTarefaRepository $tarefaRepository;
     private UsuarioRepository $usuarioRepository;
     private EmpresaRepository $empresaRepository;
+    private AlertaEmailDestinatarioService $destinatarioService;
+    private EmailService $emailService;
     private LogService $logService;
     private AuditService $auditService;
 
@@ -32,6 +34,8 @@ class PropostaAlertaOrquestradorService
         ?FavoritoTarefaRepository $tarefaRepository = null,
         ?UsuarioRepository $usuarioRepository = null,
         ?EmpresaRepository $empresaRepository = null,
+        ?AlertaEmailDestinatarioService $destinatarioService = null,
+        ?EmailService $emailService = null,
         ?LogService $logService = null,
         ?AuditService $auditService = null
     ) {
@@ -42,6 +46,11 @@ class PropostaAlertaOrquestradorService
         $this->usuarioRepository = $usuarioRepository ?? new UsuarioRepository();
         $this->empresaRepository = $empresaRepository ?? new EmpresaRepository();
         $this->logService = $logService ?? new LogService();
+        $this->destinatarioService = $destinatarioService ?? new AlertaEmailDestinatarioService(
+            $this->empresaRepository,
+            $this->usuarioRepository
+        );
+        $this->emailService = $emailService ?? new EmailService($this->logService);
         $this->auditService = $auditService ?? new AuditService($this->logService);
     }
 
@@ -493,15 +502,35 @@ class PropostaAlertaOrquestradorService
         }
 
         try {
-            $destinatarios = $this->resolverDestinatariosEscalonamento($empresaId, $playbook);
+            $destinatarios = $this->destinatarioService->resolverEscalonamento(
+                $empresaId,
+                isset($playbook['responsavel_email']) ? (string) $playbook['responsavel_email'] : null
+            );
             if ($destinatarios === []) {
+                return;
+            }
+
+            $validacaoDestinos = $this->destinatarioService->validarListaEmails($destinatarios);
+            $destinosValidos = isset($validacaoDestinos['validos']) && is_array($validacaoDestinos['validos'])
+                ? $validacaoDestinos['validos']
+                : [];
+            if ($destinosValidos === []) {
+                $this->logService->warning(
+                    'propostas.playbook.escalonamento.email',
+                    'Nenhum destinatario valido para email de escalonamento.',
+                    [
+                        'empresa_id' => $empresaId,
+                        'playbook_id' => (int) ($playbook['id'] ?? 0),
+                        'rejeitados' => $validacaoDestinos['rejeitados'] ?? [],
+                    ]
+                );
                 return;
             }
 
             $appName = $this->envString('APP_NAME', 'SaaS Editais');
             $nivelEscalonamento = max(1, (int) ($playbook['escalonamento_nivel'] ?? 1));
             $subject = '[' . $appName . '] Escalonamento automatico L' . $nivelEscalonamento . ' de alerta de proposta';
-            $fromAddress = trim($this->envString('ALERTA_EMAIL_FROM', 'no-reply@localhost'));
+            $fromAddress = trim($this->envString('ALERTA_EMAIL_FROM', 'no-reply@example.com'));
             $fromName = trim($this->envString('ALERTA_EMAIL_NOME', $appName));
             $dashboardUrl = rtrim($this->envString('APP_URL', ''), '/') . '/dashboard';
 
@@ -524,25 +553,22 @@ class PropostaAlertaOrquestradorService
             $linhas[] = '';
             $linhas[] = 'Acompanhe no dashboard: ' . $dashboardUrl;
 
-            $headers = [];
-            $headers[] = 'MIME-Version: 1.0';
-            $headers[] = 'Content-Type: text/plain; charset=UTF-8';
-            $headers[] = 'From: ' . $fromName . ' <' . $fromAddress . '>';
-
-            $ok = @mail(
-                implode(',', $destinatarios),
+            $envio = $this->emailService->sendPlainText(
+                $destinosValidos,
                 $subject,
                 implode(PHP_EOL, $linhas),
-                implode("\r\n", $headers)
+                $fromAddress,
+                $fromName
             );
 
-            if (!$ok) {
+            if (($envio['sucesso'] ?? false) !== true) {
                 $this->logService->warning(
                     'propostas.playbook.escalonamento.email',
                     'Falha no envio de email de escalonamento.',
                     [
                         'empresa_id' => $empresaId,
                         'playbook_id' => (int) ($playbook['id'] ?? 0),
+                        'erro' => $envio['erro'] ?? 'falha_envio_email',
                     ]
                 );
             }
@@ -565,40 +591,10 @@ class PropostaAlertaOrquestradorService
      */
     private function resolverDestinatariosEscalonamento(int $empresaId, array $playbook): array
     {
-        $emails = [];
-
-        $responsavelEmail = trim((string) ($playbook['responsavel_email'] ?? ''));
-        if ($responsavelEmail !== '' && filter_var($responsavelEmail, FILTER_VALIDATE_EMAIL)) {
-            $emails[] = strtolower($responsavelEmail);
-        }
-
-        $empresa = $this->empresaRepository->findById($empresaId);
-        if ($empresa !== null) {
-            $emailContato = trim((string) ($empresa->emailContato ?? ''));
-            if ($emailContato !== '' && filter_var($emailContato, FILTER_VALIDATE_EMAIL)) {
-                $emails[] = strtolower($emailContato);
-            }
-        }
-
-        $usuarios = $this->usuarioRepository->listAtivosByEmpresa($empresaId);
-        foreach ($usuarios as $usuario) {
-            $perfil = strtoupper(trim((string) ($usuario->perfil ?? '')));
-            $email = trim((string) ($usuario->email ?? ''));
-            if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                continue;
-            }
-
-            if (in_array($perfil, ['SUPER_ADMIN', 'ADMIN'], true)) {
-                $emails[] = strtolower($email);
-            }
-        }
-
-        $emails = array_values(array_unique($emails));
-        if (count($emails) > 6) {
-            $emails = array_slice($emails, 0, 6);
-        }
-
-        return $emails;
+        return $this->destinatarioService->resolverEscalonamento(
+            $empresaId,
+            isset($playbook['responsavel_email']) ? (string) $playbook['responsavel_email'] : null
+        );
     }
 
     /**

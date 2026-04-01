@@ -16,6 +16,8 @@ class PropostaAlertaNotificacaoService
     private PropostaAlertaOrquestradorService $orquestradorService;
     private EmpresaRepository $empresaRepository;
     private UsuarioRepository $usuarioRepository;
+    private AlertaEmailDestinatarioService $destinatarioService;
+    private EmailService $emailService;
     private LogService $logService;
     private AuditService $auditService;
 
@@ -25,6 +27,8 @@ class PropostaAlertaNotificacaoService
         ?PropostaAlertaOrquestradorService $orquestradorService = null,
         ?EmpresaRepository $empresaRepository = null,
         ?UsuarioRepository $usuarioRepository = null,
+        ?AlertaEmailDestinatarioService $destinatarioService = null,
+        ?EmailService $emailService = null,
         ?LogService $logService = null,
         ?AuditService $auditService = null
     ) {
@@ -34,6 +38,11 @@ class PropostaAlertaNotificacaoService
         $this->empresaRepository = $empresaRepository ?? new EmpresaRepository();
         $this->usuarioRepository = $usuarioRepository ?? new UsuarioRepository();
         $this->logService = $logService ?? new LogService();
+        $this->destinatarioService = $destinatarioService ?? new AlertaEmailDestinatarioService(
+            $this->empresaRepository,
+            $this->usuarioRepository
+        );
+        $this->emailService = $emailService ?? new EmailService($this->logService);
         $this->auditService = $auditService ?? new AuditService($this->logService);
     }
 
@@ -243,14 +252,22 @@ class PropostaAlertaNotificacaoService
             return ['sucesso' => true];
         }
 
-        $destinatario = $this->resolverDestinatarioEmail($empresaId);
-        if ($destinatario === null) {
+        $resolucao = $this->destinatarioService->resolverPrincipal($empresaId);
+        $destinatario = isset($resolucao['email']) ? trim((string) ($resolucao['email'] ?? '')) : '';
+        if ($destinatario === '') {
             return ['sucesso' => false, 'erro' => 'destinatario_nao_configurado'];
         }
 
+        $validacao = $this->destinatarioService->validarEmail($destinatario);
+        if (($validacao['valido'] ?? false) !== true) {
+            $erro = (string) ($validacao['erro'] ?? 'destinatario_invalido');
+            return ['sucesso' => false, 'erro' => 'destinatario_invalido:' . $erro];
+        }
+        $destinatario = (string) ($validacao['email'] ?? $destinatario);
+
         $appName = $this->envString('APP_NAME', 'SaaS Editais');
         $subject = '[' . $appName . '] ' . count($novos) . ' novo(s) alerta(s) de propostas';
-        $fromAddress = trim($this->envString('ALERTA_EMAIL_FROM', 'no-reply@localhost'));
+        $fromAddress = trim($this->envString('ALERTA_EMAIL_FROM', 'no-reply@example.com'));
         $fromName = trim($this->envString('ALERTA_EMAIL_NOME', $appName));
 
         $linhas = [];
@@ -271,14 +288,16 @@ class PropostaAlertaNotificacaoService
         $linhas[] = 'Acesse o dashboard para detalhes.';
 
         $body = implode(PHP_EOL, $linhas);
-        $headers = [];
-        $headers[] = 'MIME-Version: 1.0';
-        $headers[] = 'Content-Type: text/plain; charset=UTF-8';
-        $headers[] = 'From: ' . $fromName . ' <' . $fromAddress . '>';
 
-        $ok = @mail($destinatario, $subject, $body, implode("\r\n", $headers));
-        if (!$ok) {
-            return ['sucesso' => false, 'erro' => 'falha_mail_php'];
+        $envio = $this->emailService->sendPlainText(
+            $destinatario,
+            $subject,
+            $body,
+            $fromAddress,
+            $fromName
+        );
+        if (($envio['sucesso'] ?? false) !== true) {
+            return ['sucesso' => false, 'erro' => (string) ($envio['erro'] ?? 'falha_envio_email')];
         }
 
         return ['sucesso' => true];
@@ -286,23 +305,9 @@ class PropostaAlertaNotificacaoService
 
     private function resolverDestinatarioEmail(int $empresaId): ?string
     {
-        $empresa = $this->empresaRepository->findById($empresaId);
-        if ($empresa !== null) {
-            $emailContato = trim((string) ($empresa->emailContato ?? ''));
-            if ($emailContato !== '' && filter_var($emailContato, FILTER_VALIDATE_EMAIL)) {
-                return $emailContato;
-            }
-        }
-
-        $usuarios = $this->usuarioRepository->listAtivosByEmpresa($empresaId);
-        foreach ($usuarios as $usuario) {
-            $email = trim((string) ($usuario->email ?? ''));
-            if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                return $email;
-            }
-        }
-
-        return null;
+        $resolucao = $this->destinatarioService->resolverPrincipal($empresaId);
+        $email = isset($resolucao['email']) ? trim((string) ($resolucao['email'] ?? '')) : '';
+        return $email !== '' ? $email : null;
     }
 
     private function envInt(string $key, int $default): int
