@@ -23,6 +23,8 @@ class PropostaController extends Controller
         $empresaId = (int) $request->session('auth.empresa_id', 0);
         $resultado = $this->propostaService->listar($empresaId, $request->input());
         $resumo = $this->propostaService->resumoPorStatus($empresaId);
+        $alertasResultado = $this->propostaService->alertasResultadoJulgamento($empresaId, 7, 10, 8);
+        $painelWinLoss = $this->propostaService->painelWinLoss($empresaId, 8);
 
         $response->view('propostas/index', [
             'appName' => $_ENV['APP_NAME'] ?? 'SaaS Editais',
@@ -37,6 +39,8 @@ class PropostaController extends Controller
             'filters' => $resultado['filters'],
             'statusPermitidos' => $resultado['status_permitidos'],
             'resumo' => $resumo,
+            'alertasResultado' => $alertasResultado,
+            'painelWinLoss' => $painelWinLoss,
             'message' => $request->pullSession('propostas.message', null),
         ]);
     }

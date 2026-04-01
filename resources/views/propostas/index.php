@@ -14,7 +14,19 @@ $sort = isset($sort) ? (string) $sort : 'atualizado_desc';
 $filters = isset($filters) && is_array($filters) ? $filters : [];
 $statusPermitidos = isset($statusPermitidos) && is_array($statusPermitidos) ? $statusPermitidos : [];
 $resumo = isset($resumo) && is_array($resumo) ? $resumo : [];
+$alertasResultado = isset($alertasResultado) && is_array($alertasResultado) ? $alertasResultado : [];
+$painelWinLoss = isset($painelWinLoss) && is_array($painelWinLoss) ? $painelWinLoss : [];
 $message = isset($message) ? (string) $message : null;
+
+$alertasSemResultado = isset($alertasResultado['sem_resultado']) && is_array($alertasResultado['sem_resultado'])
+    ? $alertasResultado['sem_resultado']
+    : [];
+$alertasJulgamentoParado = isset($alertasResultado['julgamento_parado']) && is_array($alertasResultado['julgamento_parado'])
+    ? $alertasResultado['julgamento_parado']
+    : [];
+$configAlertas = isset($alertasResultado['config']) && is_array($alertasResultado['config']) ? $alertasResultado['config'] : [];
+$winLossOrgao = isset($painelWinLoss['por_orgao']) && is_array($painelWinLoss['por_orgao']) ? $painelWinLoss['por_orgao'] : [];
+$winLossModalidade = isset($painelWinLoss['por_modalidade']) && is_array($painelWinLoss['por_modalidade']) ? $painelWinLoss['por_modalidade'] : [];
 
 $usuarioNome = htmlspecialchars((string) ($auth['nome'] ?? 'Usuario'), ENT_QUOTES, 'UTF-8');
 $empresaNome = htmlspecialchars((string) ($tenant['nome_fantasia'] ?? $tenant['razao_social'] ?? 'Empresa'), ENT_QUOTES, 'UTF-8');
@@ -39,6 +51,24 @@ $badgeStatusClass = static function (?string $status): string {
         'ENVIADA' => 'badge-enviada',
         default => 'badge-rascunho',
     };
+};
+
+$formatarDataHora = static function (?string $value): string {
+    if ($value === null || trim($value) === '') {
+        return '-';
+    }
+
+    $raw = trim($value);
+    $formatos = ['Y-m-d H:i:s', 'Y-m-d H:i', 'Y-m-d'];
+    foreach ($formatos as $formato) {
+        $date = DateTimeImmutable::createFromFormat($formato, $raw);
+        if ($date instanceof DateTimeImmutable) {
+            return $date->format($formato === 'Y-m-d' ? 'd/m/Y' : 'd/m/Y H:i');
+        }
+    }
+
+    $timestamp = strtotime($raw);
+    return $timestamp === false ? $raw : date('d/m/Y H:i', $timestamp);
 };
 ?>
 <!doctype html>
@@ -102,6 +132,115 @@ $badgeStatusClass = static function (?string $status): string {
                 <article class="summary-card"><strong>Resultados</strong><div><?= (int) ($resumo['RESULTADOS_TOTAL'] ?? 0) ?></div></article>
                 <article class="summary-card"><strong>Vencedoras</strong><div><?= (int) ($resumo['RESULTADO_VENCEDORA'] ?? 0) ?></div></article>
                 <article class="summary-card"><strong>Taxa de sucesso</strong><div><?= number_format((float) ($resumo['TAXA_SUCESSO_ENVIADAS'] ?? 0), 1, ',', '.') ?>%</div></article>
+            </div>
+        </section>
+
+        <section class="panel">
+            <h3>Alertas automáticos de resultado/julgamento</h3>
+            <p class="muted">
+                Sem resultado apos <?= (int) ($configAlertas['dias_sem_resultado'] ?? 7) ?> dias de envio
+                e julgamento sem atualizacao apos <?= (int) ($configAlertas['dias_julgamento_parado'] ?? 10) ?> dias.
+            </p>
+
+            <div class="grid">
+                <article>
+                    <h4>Sem resultado</h4>
+                    <?php if ($alertasSemResultado === []): ?>
+                        <p class="muted">Nenhum alerta nesta categoria.</p>
+                    <?php else: ?>
+                        <ul>
+                            <?php foreach ($alertasSemResultado as $item): ?>
+                                <li>
+                                    <a href="/propostas/<?= (int) ($item['proposta_id'] ?? 0) ?>">Proposta #<?= (int) ($item['proposta_id'] ?? 0) ?></a>
+                                    - <?= htmlspecialchars((string) ($item['orgao_nome'] ?? '-'), ENT_QUOTES, 'UTF-8') ?>
+                                    - ultimo envio: <?= htmlspecialchars($formatarDataHora(isset($item['ultima_submissao']) ? (string) $item['ultima_submissao'] : null), ENT_QUOTES, 'UTF-8') ?>
+                                    - <?= (int) ($item['dias_sem_retorno'] ?? 0) ?> dias
+                                </li>
+                            <?php endforeach; ?>
+                        </ul>
+                    <?php endif; ?>
+                </article>
+                <article>
+                    <h4>Julgamento parado</h4>
+                    <?php if ($alertasJulgamentoParado === []): ?>
+                        <p class="muted">Nenhum alerta nesta categoria.</p>
+                    <?php else: ?>
+                        <ul>
+                            <?php foreach ($alertasJulgamentoParado as $item): ?>
+                                <li>
+                                    <a href="/propostas/<?= (int) ($item['proposta_id'] ?? 0) ?>">Proposta #<?= (int) ($item['proposta_id'] ?? 0) ?></a>
+                                    - <?= htmlspecialchars((string) ($item['orgao_nome'] ?? '-'), ENT_QUOTES, 'UTF-8') ?>
+                                    - atualizacao: <?= htmlspecialchars($formatarDataHora(isset($item['ultima_atualizacao_resultado']) ? (string) $item['ultima_atualizacao_resultado'] : null), ENT_QUOTES, 'UTF-8') ?>
+                                    - <?= (int) ($item['dias_em_julgamento'] ?? 0) ?> dias
+                                </li>
+                            <?php endforeach; ?>
+                        </ul>
+                    <?php endif; ?>
+                </article>
+            </div>
+        </section>
+
+        <section class="panel">
+            <h3>Painel win/loss</h3>
+            <div class="grid">
+                <article>
+                    <h4>Por orgao</h4>
+                    <?php if ($winLossOrgao === []): ?>
+                        <p class="muted">Sem dados de resultado por orgao.</p>
+                    <?php else: ?>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Orgao</th>
+                                    <th>Vitorias</th>
+                                    <th>Derrotas</th>
+                                    <th>Em julgamento</th>
+                                    <th>Taxa</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($winLossOrgao as $item): ?>
+                                    <tr>
+                                        <td><?= htmlspecialchars((string) ($item['dimensao'] ?? '-'), ENT_QUOTES, 'UTF-8') ?></td>
+                                        <td><?= (int) ($item['vitorias'] ?? 0) ?></td>
+                                        <td><?= (int) ($item['derrotas'] ?? 0) ?></td>
+                                        <td><?= (int) ($item['em_julgamento'] ?? 0) ?></td>
+                                        <td><?= number_format((float) ($item['taxa_sucesso'] ?? 0), 1, ',', '.') ?>%</td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    <?php endif; ?>
+                </article>
+                <article>
+                    <h4>Por modalidade</h4>
+                    <?php if ($winLossModalidade === []): ?>
+                        <p class="muted">Sem dados de resultado por modalidade.</p>
+                    <?php else: ?>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Modalidade</th>
+                                    <th>Vitorias</th>
+                                    <th>Derrotas</th>
+                                    <th>Em julgamento</th>
+                                    <th>Taxa</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($winLossModalidade as $item): ?>
+                                    <tr>
+                                        <td><?= htmlspecialchars((string) ($item['dimensao'] ?? '-'), ENT_QUOTES, 'UTF-8') ?></td>
+                                        <td><?= (int) ($item['vitorias'] ?? 0) ?></td>
+                                        <td><?= (int) ($item['derrotas'] ?? 0) ?></td>
+                                        <td><?= (int) ($item['em_julgamento'] ?? 0) ?></td>
+                                        <td><?= number_format((float) ($item['taxa_sucesso'] ?? 0), 1, ',', '.') ?>%</td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    <?php endif; ?>
+                </article>
             </div>
         </section>
 

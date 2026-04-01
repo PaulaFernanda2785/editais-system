@@ -153,6 +153,134 @@ class PropostaResultadoRepository
         return $grouped;
     }
 
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function listAlertasSemResultado(int $empresaId, string $cutoffDateTime, int $limit = 10): array
+    {
+        if ($limit < 1) {
+            $limit = 10;
+        }
+
+        $stmt = $this->pdo->prepare(
+            'SELECT
+                p.id AS proposta_id,
+                p.titulo AS proposta_titulo,
+                e.numero_edital,
+                e.orgao_nome,
+                e.modalidade,
+                ls.ultima_submissao,
+                TIMESTAMPDIFF(DAY, ls.ultima_submissao, NOW()) AS dias_sem_retorno
+            FROM propostas_execucao p
+            INNER JOIN favoritos f ON f.id = p.favorito_id
+            INNER JOIN editais e ON e.id = f.edital_id
+            INNER JOIN (
+                SELECT
+                    ps.proposta_id,
+                    MAX(ps.data_submissao) AS ultima_submissao
+                FROM proposta_submissoes ps
+                WHERE ps.empresa_id = :empresa_id_sub
+                GROUP BY ps.proposta_id
+            ) ls ON ls.proposta_id = p.id
+            LEFT JOIN proposta_resultados pr
+                ON pr.proposta_id = p.id
+               AND pr.empresa_id = p.empresa_id
+            WHERE p.empresa_id = :empresa_id_main
+              AND p.status = \'ENVIADA\'
+              AND ls.ultima_submissao <= :cutoff_data
+            GROUP BY
+                p.id,
+                p.titulo,
+                e.numero_edital,
+                e.orgao_nome,
+                e.modalidade,
+                ls.ultima_submissao
+            HAVING COUNT(pr.id) = 0
+            ORDER BY ls.ultima_submissao ASC, p.id ASC
+            LIMIT :limite'
+        );
+        $stmt->bindValue(':empresa_id_sub', $empresaId, PDO::PARAM_INT);
+        $stmt->bindValue(':empresa_id_main', $empresaId, PDO::PARAM_INT);
+        $stmt->bindValue(':cutoff_data', $cutoffDateTime, PDO::PARAM_STR);
+        $stmt->bindValue(':limite', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+
+        $rows = $stmt->fetchAll();
+        return is_array($rows) ? $rows : [];
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function listAlertasJulgamentoParado(int $empresaId, string $cutoffDateTime, int $limit = 10): array
+    {
+        if ($limit < 1) {
+            $limit = 10;
+        }
+
+        $stmt = $this->pdo->prepare(
+            'SELECT
+                p.id AS proposta_id,
+                p.titulo AS proposta_titulo,
+                e.numero_edital,
+                e.orgao_nome,
+                e.modalidade,
+                r.data_resultado AS ultima_atualizacao_resultado,
+                TIMESTAMPDIFF(DAY, r.data_resultado, NOW()) AS dias_em_julgamento
+            FROM propostas_execucao p
+            INNER JOIN favoritos f ON f.id = p.favorito_id
+            INNER JOIN editais e ON e.id = f.edital_id
+            INNER JOIN (
+                SELECT
+                    pr1.id,
+                    pr1.proposta_id,
+                    pr1.data_resultado,
+                    pr1.situacao
+                FROM proposta_resultados pr1
+                INNER JOIN (
+                    SELECT
+                        proposta_id,
+                        MAX(id) AS max_id
+                    FROM proposta_resultados
+                    WHERE empresa_id = :empresa_id_sub_latest
+                    GROUP BY proposta_id
+                ) latest ON latest.max_id = pr1.id
+                WHERE pr1.empresa_id = :empresa_id_sub_rows
+            ) r ON r.proposta_id = p.id
+            WHERE p.empresa_id = :empresa_id_main
+              AND p.status = \'ENVIADA\'
+              AND r.situacao = \'EM_JULGAMENTO\'
+              AND r.data_resultado <= :cutoff_data
+            ORDER BY r.data_resultado ASC, p.id ASC
+            LIMIT :limite'
+        );
+        $stmt->bindValue(':empresa_id_sub_latest', $empresaId, PDO::PARAM_INT);
+        $stmt->bindValue(':empresa_id_sub_rows', $empresaId, PDO::PARAM_INT);
+        $stmt->bindValue(':empresa_id_main', $empresaId, PDO::PARAM_INT);
+        $stmt->bindValue(':cutoff_data', $cutoffDateTime, PDO::PARAM_STR);
+        $stmt->bindValue(':limite', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+
+        $rows = $stmt->fetchAll();
+        return is_array($rows) ? $rows : [];
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function painelWinLossPorOrgao(int $empresaId, int $limit = 10): array
+    {
+        return $this->painelWinLossByDimensao($empresaId, 'orgao', $limit);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function painelWinLossPorModalidade(int $empresaId, int $limit = 10): array
+    {
+        return $this->painelWinLossByDimensao($empresaId, 'modalidade', $limit);
+    }
+
     private function normalizeSituacao(string $situacao): string
     {
         $situacao = strtoupper(trim($situacao));
@@ -215,5 +343,67 @@ class PropostaResultadoRepository
         }
 
         return $int;
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function painelWinLossByDimensao(int $empresaId, string $dimensao, int $limit): array
+    {
+        if ($limit < 1) {
+            $limit = 10;
+        }
+
+        $coluna = $dimensao === 'modalidade' ? 'e.modalidade' : 'e.orgao_nome';
+        $stmt = $this->pdo->prepare(
+            'SELECT
+                ' . $coluna . ' AS dimensao,
+                COUNT(*) AS total,
+                SUM(CASE WHEN pr.situacao = \'VENCEDORA\' THEN 1 ELSE 0 END) AS vitorias,
+                SUM(CASE WHEN pr.situacao IN (\'NAO_VENCEDORA\', \'DESCLASSIFICADA\', \'ANULADA\') THEN 1 ELSE 0 END) AS derrotas,
+                SUM(CASE WHEN pr.situacao = \'EM_JULGAMENTO\' THEN 1 ELSE 0 END) AS em_julgamento
+            FROM proposta_resultados pr
+            INNER JOIN propostas_execucao p
+                ON p.id = pr.proposta_id
+               AND p.empresa_id = pr.empresa_id
+            INNER JOIN favoritos f ON f.id = p.favorito_id
+            INNER JOIN editais e ON e.id = f.edital_id
+            WHERE pr.empresa_id = :empresa_id
+            GROUP BY ' . $coluna . '
+            ORDER BY total DESC, vitorias DESC
+            LIMIT :limite'
+        );
+        $stmt->bindValue(':empresa_id', $empresaId, PDO::PARAM_INT);
+        $stmt->bindValue(':limite', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+
+        $rows = $stmt->fetchAll();
+        if (!is_array($rows)) {
+            return [];
+        }
+
+        $result = [];
+        foreach ($rows as $row) {
+            $nomeDimensao = trim((string) ($row['dimensao'] ?? ''));
+            if ($nomeDimensao === '') {
+                $nomeDimensao = '-';
+            }
+
+            $vitorias = (int) ($row['vitorias'] ?? 0);
+            $derrotas = (int) ($row['derrotas'] ?? 0);
+            $emJulgamento = (int) ($row['em_julgamento'] ?? 0);
+            $finalizados = $vitorias + $derrotas;
+
+            $result[] = [
+                'dimensao' => $nomeDimensao,
+                'total' => (int) ($row['total'] ?? 0),
+                'vitorias' => $vitorias,
+                'derrotas' => $derrotas,
+                'em_julgamento' => $emJulgamento,
+                'taxa_sucesso' => $finalizados > 0 ? round(($vitorias / $finalizados) * 100, 1) : 0.0,
+            ];
+        }
+
+        return $result;
     }
 }

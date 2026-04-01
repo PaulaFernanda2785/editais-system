@@ -597,6 +597,61 @@ class PropostaExecucaoService
         ];
     }
 
+    /**
+     * @return array<string, mixed>
+     */
+    public function alertasResultadoJulgamento(
+        int $empresaId,
+        int $diasSemResultado = 7,
+        int $diasJulgamentoParado = 10,
+        int $limite = 10
+    ): array {
+        if ($diasSemResultado < 1) {
+            $diasSemResultado = 7;
+        }
+        if ($diasJulgamentoParado < 1) {
+            $diasJulgamentoParado = 10;
+        }
+        if ($limite < 1) {
+            $limite = 10;
+        }
+
+        $agora = new DateTimeImmutable('now');
+        $cutoffSemResultado = $agora->modify('-' . $diasSemResultado . ' days')->format('Y-m-d H:i:s');
+        $cutoffJulgamento = $agora->modify('-' . $diasJulgamentoParado . ' days')->format('Y-m-d H:i:s');
+
+        $semResultado = $this->resultadoRepository->listAlertasSemResultado($empresaId, $cutoffSemResultado, $limite);
+        $julgamentoParado = $this->resultadoRepository->listAlertasJulgamentoParado($empresaId, $cutoffJulgamento, $limite);
+
+        return [
+            'config' => [
+                'dias_sem_resultado' => $diasSemResultado,
+                'dias_julgamento_parado' => $diasJulgamentoParado,
+            ],
+            'sem_resultado' => $semResultado,
+            'julgamento_parado' => $julgamentoParado,
+            'totais' => [
+                'sem_resultado' => count($semResultado),
+                'julgamento_parado' => count($julgamentoParado),
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, array<int, array<string, mixed>>>
+     */
+    public function painelWinLoss(int $empresaId, int $limite = 10): array
+    {
+        if ($limite < 1) {
+            $limite = 10;
+        }
+
+        return [
+            'por_orgao' => $this->resultadoRepository->painelWinLossPorOrgao($empresaId, $limite),
+            'por_modalidade' => $this->resultadoRepository->painelWinLossPorModalidade($empresaId, $limite),
+        ];
+    }
+
     private function tituloProposta(?string $numeroEdital, ?string $orgaoNome): string
     {
         $numero = trim((string) ($numeroEdital ?? ''));
