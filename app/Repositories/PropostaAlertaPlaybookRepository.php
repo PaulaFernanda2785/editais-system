@@ -9,6 +9,8 @@ use PDO;
 
 class PropostaAlertaPlaybookRepository
 {
+    public const CONTEXTO_GERAL = 'GERAL';
+
     private PDO $pdo;
 
     public function __construct(?PDO $pdo = null)
@@ -51,10 +53,14 @@ class PropostaAlertaPlaybookRepository
                 proposta_id,
                 favorito_id,
                 tipo_alerta,
+                contexto_orgao_nome,
+                contexto_modalidade,
                 status,
                 prioridade,
                 fator_priorizacao,
+                risco_atraso_percentual,
                 sla_horas,
+                sla_sugerido_horas,
                 prazo_sla_em,
                 progresso_percentual,
                 responsavel_usuario_id,
@@ -67,10 +73,14 @@ class PropostaAlertaPlaybookRepository
                 :proposta_id,
                 :favorito_id,
                 :tipo_alerta,
+                :contexto_orgao_nome,
+                :contexto_modalidade,
                 :status,
                 :prioridade,
                 :fator_priorizacao,
+                :risco_atraso_percentual,
                 :sla_horas,
+                :sla_sugerido_horas,
                 :prazo_sla_em,
                 :progresso_percentual,
                 :responsavel_usuario_id,
@@ -85,10 +95,20 @@ class PropostaAlertaPlaybookRepository
             'proposta_id' => (int) ($data['proposta_id'] ?? 0),
             'favorito_id' => (int) ($data['favorito_id'] ?? 0),
             'tipo_alerta' => (string) ($data['tipo_alerta'] ?? 'SEM_RESULTADO'),
+            'contexto_orgao_nome' => $this->truncate(
+                $data['contexto_orgao_nome'] ?? self::CONTEXTO_GERAL,
+                255
+            ) ?? self::CONTEXTO_GERAL,
+            'contexto_modalidade' => $this->truncate(
+                $data['contexto_modalidade'] ?? self::CONTEXTO_GERAL,
+                120
+            ) ?? self::CONTEXTO_GERAL,
             'status' => (string) ($data['status'] ?? 'ATIVO'),
             'prioridade' => (string) ($data['prioridade'] ?? 'MEDIA'),
             'fator_priorizacao' => (float) ($data['fator_priorizacao'] ?? 1.0),
+            'risco_atraso_percentual' => (float) ($data['risco_atraso_percentual'] ?? 0.0),
             'sla_horas' => (int) ($data['sla_horas'] ?? 48),
+            'sla_sugerido_horas' => (int) ($data['sla_sugerido_horas'] ?? ($data['sla_horas'] ?? 48)),
             'prazo_sla_em' => (string) ($data['prazo_sla_em'] ?? date('Y-m-d H:i:s')),
             'progresso_percentual' => (float) ($data['progresso_percentual'] ?? 0.0),
             'responsavel_usuario_id' => isset($data['responsavel_usuario_id'])
@@ -112,10 +132,14 @@ class PropostaAlertaPlaybookRepository
                 proposta_id = :proposta_id,
                 favorito_id = :favorito_id,
                 tipo_alerta = :tipo_alerta,
+                contexto_orgao_nome = :contexto_orgao_nome,
+                contexto_modalidade = :contexto_modalidade,
                 status = :status,
                 prioridade = :prioridade,
                 fator_priorizacao = :fator_priorizacao,
+                risco_atraso_percentual = :risco_atraso_percentual,
                 sla_horas = :sla_horas,
+                sla_sugerido_horas = :sla_sugerido_horas,
                 prazo_sla_em = :prazo_sla_em,
                 progresso_percentual = 0.00,
                 responsavel_usuario_id = :responsavel_usuario_id,
@@ -137,10 +161,20 @@ class PropostaAlertaPlaybookRepository
             'proposta_id' => (int) ($data['proposta_id'] ?? 0),
             'favorito_id' => (int) ($data['favorito_id'] ?? 0),
             'tipo_alerta' => (string) ($data['tipo_alerta'] ?? 'SEM_RESULTADO'),
+            'contexto_orgao_nome' => $this->truncate(
+                $data['contexto_orgao_nome'] ?? self::CONTEXTO_GERAL,
+                255
+            ) ?? self::CONTEXTO_GERAL,
+            'contexto_modalidade' => $this->truncate(
+                $data['contexto_modalidade'] ?? self::CONTEXTO_GERAL,
+                120
+            ) ?? self::CONTEXTO_GERAL,
             'status' => (string) ($data['status'] ?? 'ATIVO'),
             'prioridade' => (string) ($data['prioridade'] ?? 'MEDIA'),
             'fator_priorizacao' => (float) ($data['fator_priorizacao'] ?? 1.0),
+            'risco_atraso_percentual' => (float) ($data['risco_atraso_percentual'] ?? 0.0),
             'sla_horas' => (int) ($data['sla_horas'] ?? 48),
+            'sla_sugerido_horas' => (int) ($data['sla_sugerido_horas'] ?? ($data['sla_horas'] ?? 48)),
             'prazo_sla_em' => (string) ($data['prazo_sla_em'] ?? date('Y-m-d H:i:s')),
             'responsavel_usuario_id' => isset($data['responsavel_usuario_id'])
                 ? (int) $data['responsavel_usuario_id']
@@ -537,7 +571,17 @@ class PropostaAlertaPlaybookRepository
                     WHEN encerrado_em IS NOT NULL
                         THEN TIMESTAMPDIFF(MINUTE, criado_em, encerrado_em)
                     ELSE NULL
-                END) AS media_minutos_encerramento
+                END) AS media_minutos_encerramento,
+                AVG(CASE
+                    WHEN status IN (\'ATIVO\', \'EM_PROGRESSO\', \'ESCALADO\')
+                        THEN risco_atraso_percentual
+                    ELSE NULL
+                END) AS risco_atraso_medio_ativo,
+                AVG(CASE
+                    WHEN status IN (\'ATIVO\', \'EM_PROGRESSO\', \'ESCALADO\')
+                        THEN COALESCE(NULLIF(sla_sugerido_horas, 0), sla_horas)
+                    ELSE NULL
+                END) AS sla_sugerido_medio_ativo
             FROM proposta_alerta_playbooks
             WHERE empresa_id = :empresa_id'
         );
@@ -554,6 +598,32 @@ class PropostaAlertaPlaybookRepository
         $mediaMinEncerramento = isset($row['media_minutos_encerramento'])
             ? (float) $row['media_minutos_encerramento']
             : 0.0;
+        $riscoAtrasoMedioAtivo = isset($row['risco_atraso_medio_ativo'])
+            ? (float) $row['risco_atraso_medio_ativo']
+            : 0.0;
+        $slaSugeridoMedioAtivo = isset($row['sla_sugerido_medio_ativo'])
+            ? (float) $row['sla_sugerido_medio_ativo']
+            : 0.0;
+
+        if ($slaSugeridoMedioAtivo <= 0.0 || $riscoAtrasoMedioAtivo <= 0.0) {
+            $fallbackStmt = $this->pdo->prepare(
+                'SELECT
+                    AVG(risco_atraso_percentual) AS risco_atraso_medio,
+                    AVG(sla_sugerido_horas) AS sla_sugerido_medio
+                FROM proposta_alerta_aprendizado_regras
+                WHERE empresa_id = :empresa_id'
+            );
+            $fallbackStmt->execute(['empresa_id' => $empresaId]);
+            $fallback = $fallbackStmt->fetch();
+            if (is_array($fallback)) {
+                if ($riscoAtrasoMedioAtivo <= 0.0 && isset($fallback['risco_atraso_medio'])) {
+                    $riscoAtrasoMedioAtivo = (float) $fallback['risco_atraso_medio'];
+                }
+                if ($slaSugeridoMedioAtivo <= 0.0 && isset($fallback['sla_sugerido_medio'])) {
+                    $slaSugeridoMedioAtivo = (float) $fallback['sla_sugerido_medio'];
+                }
+            }
+        }
 
         $taxaSla = $encerradosTotal > 0
             ? round(($encerradosNoPrazo / $encerradosTotal) * 100, 2)
@@ -571,6 +641,8 @@ class PropostaAlertaPlaybookRepository
             'taxa_escalonamento_percentual' => $taxaEscalonamento,
             'tempo_medio_primeira_atividade_horas' => round($mediaMinPrimeiraAtividade / 60, 2),
             'tempo_medio_encerramento_horas' => round($mediaMinEncerramento / 60, 2),
+            'risco_atraso_percentual' => round($riscoAtrasoMedioAtivo, 2),
+            'sla_sugerido_horas' => round($slaSugeridoMedioAtivo, 1),
         ];
     }
 
@@ -626,9 +698,13 @@ class PropostaAlertaPlaybookRepository
                 pb.alerta_notificacao_id,
                 pb.proposta_id,
                 pb.tipo_alerta,
+                pb.contexto_orgao_nome,
+                pb.contexto_modalidade,
                 pb.prioridade,
                 pb.progresso_percentual,
                 pb.prazo_sla_em,
+                pb.risco_atraso_percentual,
+                pb.sla_sugerido_horas,
                 pb.escalonado_em,
                 pb.escalonamento_nivel,
                 pb.escalonamento_motivo,
@@ -636,6 +712,7 @@ class PropostaAlertaPlaybookRepository
                 pb.responsavel_email,
                 p.titulo AS proposta_titulo,
                 e.orgao_nome,
+                e.modalidade,
                 e.numero_edital
             FROM proposta_alerta_playbooks pb
             INNER JOIN propostas_execucao p
@@ -666,6 +743,8 @@ class PropostaAlertaPlaybookRepository
         $stmt = $this->pdo->prepare(
             'SELECT
                 tipo_alerta,
+                orgao_nome_contexto,
+                modalidade_contexto,
                 total_casos,
                 wins,
                 losses,
@@ -673,14 +752,61 @@ class PropostaAlertaPlaybookRepository
                 escalonamentos_total,
                 win_rate,
                 loss_rate,
+                tempo_medio_primeira_acao_horas,
+                taxa_escalonamento_percentual,
+                risco_atraso_percentual,
+                sla_sugerido_horas,
                 prioridade_sugerida,
                 fator_priorizacao,
                 ultima_atualizacao_em
             FROM proposta_alerta_aprendizado_regras
             WHERE empresa_id = :empresa_id
-            ORDER BY tipo_alerta ASC'
+            ORDER BY risco_atraso_percentual DESC, total_casos DESC, tipo_alerta ASC'
         );
         $stmt->execute(['empresa_id' => $empresaId]);
+
+        $rows = $stmt->fetchAll();
+        return is_array($rows) ? $rows : [];
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function listarTopContextosCriticosDashboard(int $empresaId, int $limit = 5): array
+    {
+        if ($limit < 1) {
+            $limit = 5;
+        }
+
+        $stmt = $this->pdo->prepare(
+            'SELECT
+                tipo_alerta,
+                orgao_nome_contexto,
+                modalidade_contexto,
+                total_casos,
+                wins,
+                losses,
+                win_rate,
+                loss_rate,
+                tempo_medio_primeira_acao_horas,
+                taxa_escalonamento_percentual,
+                risco_atraso_percentual,
+                sla_sugerido_horas,
+                prioridade_sugerida,
+                ultima_atualizacao_em
+            FROM proposta_alerta_aprendizado_regras
+            WHERE empresa_id = :empresa_id
+              AND total_casos > 0
+            ORDER BY
+                risco_atraso_percentual DESC,
+                taxa_escalonamento_percentual DESC,
+                loss_rate DESC,
+                total_casos DESC
+            LIMIT :limite'
+        );
+        $stmt->bindValue(':empresa_id', $empresaId, PDO::PARAM_INT);
+        $stmt->bindValue(':limite', $limit, PDO::PARAM_INT);
+        $stmt->execute();
 
         $rows = $stmt->fetchAll();
         return is_array($rows) ? $rows : [];
@@ -759,49 +885,115 @@ class PropostaAlertaPlaybookRepository
     /**
      * @return array<string, mixed>|null
      */
-    public function findAprendizadoRegra(int $empresaId, string $tipoAlerta): ?array
-    {
+    public function findAprendizadoRegra(
+        int $empresaId,
+        string $tipoAlerta,
+        string $orgaoNomeContexto = self::CONTEXTO_GERAL,
+        string $modalidadeContexto = self::CONTEXTO_GERAL
+    ): ?array {
+        $orgaoContexto = $this->truncate($orgaoNomeContexto, 255) ?? self::CONTEXTO_GERAL;
+        $modalidadeContexto = $this->truncate($modalidadeContexto, 120) ?? self::CONTEXTO_GERAL;
+
         $stmt = $this->pdo->prepare(
             'SELECT *
             FROM proposta_alerta_aprendizado_regras
             WHERE empresa_id = :empresa_id
               AND tipo_alerta = :tipo_alerta
+              AND orgao_nome_contexto = :orgao_nome_contexto
+              AND modalidade_contexto = :modalidade_contexto
             LIMIT 1'
         );
         $stmt->execute([
             'empresa_id' => $empresaId,
             'tipo_alerta' => $tipoAlerta,
+            'orgao_nome_contexto' => $orgaoContexto,
+            'modalidade_contexto' => $modalidadeContexto,
         ]);
 
         $row = $stmt->fetch();
         return is_array($row) ? $row : null;
     }
 
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function findAprendizadoRegraFallback(int $empresaId, string $tipoAlerta): ?array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT *
+            FROM proposta_alerta_aprendizado_regras
+            WHERE empresa_id = :empresa_id
+              AND tipo_alerta = :tipo_alerta
+            ORDER BY
+                CASE
+                    WHEN orgao_nome_contexto = :contexto_geral_orgao
+                     AND modalidade_contexto = :contexto_geral_modalidade
+                        THEN 0
+                    ELSE 1
+                END ASC,
+                total_casos DESC,
+                id DESC
+            LIMIT 1'
+        );
+        $stmt->execute([
+            'empresa_id' => $empresaId,
+            'tipo_alerta' => $tipoAlerta,
+            'contexto_geral_orgao' => self::CONTEXTO_GERAL,
+            'contexto_geral_modalidade' => self::CONTEXTO_GERAL,
+        ]);
+
+        $row = $stmt->fetch();
+        return is_array($row) ? $row : null;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
     public function registrarAprendizado(
         int $empresaId,
         string $tipoAlerta,
+        string $orgaoNomeContexto,
+        string $modalidadeContexto,
         string $resultadoWinLoss,
-        bool $houveEscalonamento
-    ): void {
-        $regra = $this->findAprendizadoRegra($empresaId, $tipoAlerta);
+        bool $houveEscalonamento,
+        ?float $tempoPrimeiraAcaoHoras,
+        int $slaBaseHoras
+    ): array {
+        $orgaoContexto = $this->truncate($orgaoNomeContexto, 255) ?? self::CONTEXTO_GERAL;
+        $modalidadeContexto = $this->truncate($modalidadeContexto, 120) ?? self::CONTEXTO_GERAL;
+        if ($slaBaseHoras < 1) {
+            $slaBaseHoras = $this->resolverSlaBaseHoras($tipoAlerta);
+        }
+
+        $regra = $this->findAprendizadoRegra($empresaId, $tipoAlerta, $orgaoContexto, $modalidadeContexto);
         if ($regra === null) {
             $this->pdo->prepare(
                 'INSERT INTO proposta_alerta_aprendizado_regras (
                     empresa_id,
                     tipo_alerta,
+                    orgao_nome_contexto,
+                    modalidade_contexto,
                     total_casos,
                     wins,
                     losses,
                     neutros,
                     escalonamentos_total,
+                    casos_com_primeira_acao,
+                    soma_horas_primeira_acao,
                     win_rate,
                     loss_rate,
+                    tempo_medio_primeira_acao_horas,
+                    taxa_escalonamento_percentual,
+                    risco_atraso_percentual,
+                    sla_sugerido_horas,
                     prioridade_sugerida,
                     fator_priorizacao,
                     ultima_atualizacao_em
                 ) VALUES (
                     :empresa_id,
                     :tipo_alerta,
+                    :orgao_nome_contexto,
+                    :modalidade_contexto,
                     0,
                     0,
                     0,
@@ -809,6 +1001,12 @@ class PropostaAlertaPlaybookRepository
                     0,
                     0,
                     0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    40.00,
+                    :sla_sugerido_horas,
                     \'MEDIA\',
                     1.00,
                     NOW()
@@ -816,8 +1014,35 @@ class PropostaAlertaPlaybookRepository
             )->execute([
                 'empresa_id' => $empresaId,
                 'tipo_alerta' => $tipoAlerta,
+                'orgao_nome_contexto' => $orgaoContexto,
+                'modalidade_contexto' => $modalidadeContexto,
+                'sla_sugerido_horas' => $slaBaseHoras,
             ]);
-            $regra = $this->findAprendizadoRegra($empresaId, $tipoAlerta);
+            $regra = $this->findAprendizadoRegra($empresaId, $tipoAlerta, $orgaoContexto, $modalidadeContexto);
+        }
+
+        if ($regra === null) {
+            return [
+                'empresa_id' => $empresaId,
+                'tipo_alerta' => $tipoAlerta,
+                'orgao_nome_contexto' => $orgaoContexto,
+                'modalidade_contexto' => $modalidadeContexto,
+                'total_casos' => 0,
+                'wins' => 0,
+                'losses' => 0,
+                'neutros' => 0,
+                'escalonamentos_total' => 0,
+                'casos_com_primeira_acao' => 0,
+                'soma_horas_primeira_acao' => 0.0,
+                'win_rate' => 0.0,
+                'loss_rate' => 0.0,
+                'tempo_medio_primeira_acao_horas' => 0.0,
+                'taxa_escalonamento_percentual' => 0.0,
+                'risco_atraso_percentual' => 40.0,
+                'sla_sugerido_horas' => $slaBaseHoras,
+                'prioridade_sugerida' => 'MEDIA',
+                'fator_priorizacao' => 1.0,
+            ];
         }
 
         $total = (int) ($regra['total_casos'] ?? 0) + 1;
@@ -825,13 +1050,33 @@ class PropostaAlertaPlaybookRepository
         $losses = (int) ($regra['losses'] ?? 0) + ($resultadoWinLoss === 'LOSS' ? 1 : 0);
         $neutros = (int) ($regra['neutros'] ?? 0) + ($resultadoWinLoss === 'NEUTRO' ? 1 : 0);
         $escalonamentosTotal = (int) ($regra['escalonamentos_total'] ?? 0) + ($houveEscalonamento ? 1 : 0);
+        $casosComPrimeiraAcao = (int) ($regra['casos_com_primeira_acao'] ?? 0);
+        $somaHorasPrimeiraAcao = isset($regra['soma_horas_primeira_acao'])
+            ? (float) $regra['soma_horas_primeira_acao']
+            : 0.0;
+
+        if ($tempoPrimeiraAcaoHoras !== null && $tempoPrimeiraAcaoHoras > 0) {
+            $casosComPrimeiraAcao++;
+            $somaHorasPrimeiraAcao += min(9999.0, max(0.0, $tempoPrimeiraAcaoHoras));
+        }
 
         $casosDecisivos = $wins + $losses;
         $winRate = $casosDecisivos > 0 ? round(($wins / $casosDecisivos) * 100, 2) : 0.0;
         $lossRate = $casosDecisivos > 0 ? round(($losses / $casosDecisivos) * 100, 2) : 0.0;
         $escalonamentoRate = $total > 0 ? round(($escalonamentosTotal / $total) * 100, 2) : 0.0;
+        $tempoMedioPrimeiraAcao = $casosComPrimeiraAcao > 0
+            ? round($somaHorasPrimeiraAcao / $casosComPrimeiraAcao, 2)
+            : 0.0;
 
-        [$prioridade, $fator] = $this->resolverPrioridadeFator($winRate, $lossRate, $escalonamentoRate, $casosDecisivos);
+        [$prioridade, $fator, $riscoAtraso, $slaSugerido] = $this->resolverMetricasPriorizacao(
+            $winRate,
+            $lossRate,
+            $escalonamentoRate,
+            $tempoMedioPrimeiraAcao,
+            $casosDecisivos,
+            $total,
+            $slaBaseHoras
+        );
 
         $stmt = $this->pdo->prepare(
             'UPDATE proposta_alerta_aprendizado_regras
@@ -841,13 +1086,21 @@ class PropostaAlertaPlaybookRepository
                 losses = :losses,
                 neutros = :neutros,
                 escalonamentos_total = :escalonamentos_total,
+                casos_com_primeira_acao = :casos_com_primeira_acao,
+                soma_horas_primeira_acao = :soma_horas_primeira_acao,
                 win_rate = :win_rate,
                 loss_rate = :loss_rate,
+                tempo_medio_primeira_acao_horas = :tempo_medio_primeira_acao_horas,
+                taxa_escalonamento_percentual = :taxa_escalonamento_percentual,
+                risco_atraso_percentual = :risco_atraso_percentual,
+                sla_sugerido_horas = :sla_sugerido_horas,
                 prioridade_sugerida = :prioridade_sugerida,
                 fator_priorizacao = :fator_priorizacao,
                 ultima_atualizacao_em = NOW()
             WHERE empresa_id = :empresa_id
-              AND tipo_alerta = :tipo_alerta'
+              AND tipo_alerta = :tipo_alerta
+              AND orgao_nome_contexto = :orgao_nome_contexto
+              AND modalidade_contexto = :modalidade_contexto'
         );
         $stmt->execute([
             'total_casos' => $total,
@@ -855,33 +1108,90 @@ class PropostaAlertaPlaybookRepository
             'losses' => $losses,
             'neutros' => $neutros,
             'escalonamentos_total' => $escalonamentosTotal,
+            'casos_com_primeira_acao' => $casosComPrimeiraAcao,
+            'soma_horas_primeira_acao' => round($somaHorasPrimeiraAcao, 2),
             'win_rate' => $winRate,
             'loss_rate' => $lossRate,
+            'tempo_medio_primeira_acao_horas' => $tempoMedioPrimeiraAcao,
+            'taxa_escalonamento_percentual' => $escalonamentoRate,
+            'risco_atraso_percentual' => $riscoAtraso,
+            'sla_sugerido_horas' => $slaSugerido,
             'prioridade_sugerida' => $prioridade,
             'fator_priorizacao' => $fator,
             'empresa_id' => $empresaId,
             'tipo_alerta' => $tipoAlerta,
+            'orgao_nome_contexto' => $orgaoContexto,
+            'modalidade_contexto' => $modalidadeContexto,
         ]);
+
+        $atualizado = $this->findAprendizadoRegra($empresaId, $tipoAlerta, $orgaoContexto, $modalidadeContexto);
+        return is_array($atualizado) ? $atualizado : $regra;
     }
 
     /**
-     * @return array{0: string, 1: float}
+     * @return array{0: string, 1: float, 2: float, 3: int}
      */
-    private function resolverPrioridadeFator(
+    private function resolverMetricasPriorizacao(
         float $winRate,
         float $lossRate,
         float $escalonamentoRate,
-        int $casosDecisivos
+        float $tempoMedioPrimeiraAcaoHoras,
+        int $casosDecisivos,
+        int $totalCasos,
+        int $slaBaseHoras
     ): array {
-        if ($casosDecisivos >= 3 && $winRate >= 60.0 && $escalonamentoRate <= 40.0) {
-            return ['ALTA', 1.30];
+        $slaBaseHoras = max(6, min(240, $slaBaseHoras));
+        $janelaPrimeiraAcaoHoras = max(4.0, $slaBaseHoras * 0.40);
+        $indiceTempoPrimeiraAcao = $tempoMedioPrimeiraAcaoHoras > 0.0
+            ? min(100.0, ($tempoMedioPrimeiraAcaoHoras / $janelaPrimeiraAcaoHoras) * 100.0)
+            : 50.0;
+
+        $riscoAtraso = ($lossRate * 0.45)
+            + ($escalonamentoRate * 0.35)
+            + ($indiceTempoPrimeiraAcao * 0.20);
+        if ($totalCasos < 3) {
+            $riscoAtraso = max($riscoAtraso, 40.0);
+        }
+        $riscoAtraso = round(max(5.0, min(95.0, $riscoAtraso)), 2);
+
+        $scorePrioridade = ($winRate * 0.60) + ($riscoAtraso * 0.40);
+        if ($totalCasos < 3 && $scorePrioridade < 50.0) {
+            $scorePrioridade = 50.0;
         }
 
-        if ($casosDecisivos >= 3 && ($winRate <= 35.0 || $lossRate >= 65.0 || $escalonamentoRate >= 70.0)) {
-            return ['BAIXA', 0.80];
+        if ($scorePrioridade >= 68.0 || ($casosDecisivos >= 3 && $winRate >= 62.0 && $riscoAtraso >= 55.0)) {
+            $prioridade = 'ALTA';
+            $fatorBase = 1.25;
+        } elseif ($scorePrioridade <= 42.0 && $casosDecisivos >= 3 && $lossRate >= 65.0 && $riscoAtraso <= 55.0) {
+            $prioridade = 'BAIXA';
+            $fatorBase = 0.85;
+        } else {
+            $prioridade = 'MEDIA';
+            $fatorBase = 1.00;
         }
 
-        return ['MEDIA', 1.00];
+        $fatorRisco = 1.00;
+        if ($riscoAtraso >= 75.0) {
+            $fatorRisco = 1.15;
+        } elseif ($riscoAtraso <= 30.0) {
+            $fatorRisco = 0.92;
+        }
+
+        $fator = round(max(0.60, min(1.80, $fatorBase * $fatorRisco)), 2);
+        $slaSugerido = (int) round($slaBaseHoras / $fator);
+        if ($slaSugerido < 6) {
+            $slaSugerido = 6;
+        }
+        if ($slaSugerido > 240) {
+            $slaSugerido = 240;
+        }
+
+        return [$prioridade, $fator, $riscoAtraso, $slaSugerido];
+    }
+
+    private function resolverSlaBaseHoras(string $tipoAlerta): int
+    {
+        return $tipoAlerta === 'JULGAMENTO_PARADO' ? 36 : 48;
     }
 
     private function truncate(mixed $value, int $limit): ?string

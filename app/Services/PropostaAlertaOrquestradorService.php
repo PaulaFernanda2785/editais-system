@@ -118,11 +118,14 @@ class PropostaAlertaOrquestradorService
                         'taxa_escalonamento_percentual' => 0.0,
                         'tempo_medio_primeira_atividade_horas' => 0.0,
                         'tempo_medio_encerramento_horas' => 0.0,
+                        'risco_atraso_percentual' => 0.0,
+                        'sla_sugerido_horas' => 0.0,
                     ],
                     'por_nivel' => [],
                 ],
                 'escalonados' => [],
                 'aprendizado' => [],
+                'top_contextos_criticos' => [],
                 'evidencias' => [],
             ];
         }
@@ -139,6 +142,7 @@ class PropostaAlertaOrquestradorService
             ],
             'escalonados' => $this->playbookRepository->listarEscalonadosDashboard($empresaId, $limitEscalonados),
             'aprendizado' => $this->playbookRepository->listarAprendizadoDashboard($empresaId),
+            'top_contextos_criticos' => $this->playbookRepository->listarTopContextosCriticosDashboard($empresaId, 5),
             'evidencias' => $this->playbookRepository->listarEventosRecentesDashboard($empresaId, $limitEvidencias),
         ];
     }
@@ -166,11 +170,25 @@ class PropostaAlertaOrquestradorService
                 continue;
             }
 
+            $contextoAprendizado = $this->resolverContextoAprendizado(
+                $proposta->editalOrgaoNome,
+                $proposta->editalModalidade
+            );
             $responsavel = $this->resolverResponsavel($empresaId);
-            $regra = $this->playbookRepository->findAprendizadoRegra($empresaId, $tipoAlerta);
+            $regra = $this->playbookRepository->findAprendizadoRegra(
+                $empresaId,
+                $tipoAlerta,
+                $contextoAprendizado['orgao_nome_contexto'],
+                $contextoAprendizado['modalidade_contexto']
+            );
+            if ($regra === null) {
+                $regra = $this->playbookRepository->findAprendizadoRegraFallback($empresaId, $tipoAlerta);
+            }
             $prioridade = $this->resolverPrioridadeInicial($tipoAlerta, $regra);
             $fatorPriorizacao = $this->resolverFatorPriorizacao($prioridade, $regra);
-            $slaHoras = $this->resolverSlaHoras($tipoAlerta, $fatorPriorizacao);
+            $slaHoras = $this->resolverSlaHoras($tipoAlerta, $fatorPriorizacao, $regra);
+            $slaSugeridoHoras = $this->resolverSlaSugeridoHoras($slaHoras, $regra);
+            $riscoAtrasoPercentual = $this->resolverRiscoAtrasoPercentual($prioridade, $regra);
             $prazoSla = (new DateTimeImmutable('now'))->modify('+' . $slaHoras . ' hours')->format('Y-m-d H:i:s');
 
             $payload = [
@@ -179,10 +197,14 @@ class PropostaAlertaOrquestradorService
                 'proposta_id' => $propostaId,
                 'favorito_id' => $proposta->favoritoId,
                 'tipo_alerta' => $tipoAlerta,
+                'contexto_orgao_nome' => $contextoAprendizado['orgao_nome_contexto'],
+                'contexto_modalidade' => $contextoAprendizado['modalidade_contexto'],
                 'status' => 'ATIVO',
                 'prioridade' => $prioridade,
                 'fator_priorizacao' => $fatorPriorizacao,
+                'risco_atraso_percentual' => $riscoAtrasoPercentual,
                 'sla_horas' => $slaHoras,
+                'sla_sugerido_horas' => $slaSugeridoHoras,
                 'prazo_sla_em' => $prazoSla,
                 'progresso_percentual' => 0.0,
                 'responsavel_usuario_id' => $responsavel['id'] ?? null,
@@ -204,7 +226,11 @@ class PropostaAlertaOrquestradorService
                         'proposta_id' => $propostaId,
                         'tipo_alerta' => $tipoAlerta,
                         'prioridade' => $prioridade,
+                        'contexto_orgao_nome' => $contextoAprendizado['orgao_nome_contexto'],
+                        'contexto_modalidade' => $contextoAprendizado['modalidade_contexto'],
+                        'risco_atraso_percentual' => $riscoAtrasoPercentual,
                         'sla_horas' => $slaHoras,
+                        'sla_sugerido_horas' => $slaSugeridoHoras,
                     ]
                 );
             } else {
@@ -227,7 +253,11 @@ class PropostaAlertaOrquestradorService
                             'proposta_id' => $propostaId,
                             'tipo_alerta' => $tipoAlerta,
                             'prioridade' => $prioridade,
+                            'contexto_orgao_nome' => $contextoAprendizado['orgao_nome_contexto'],
+                            'contexto_modalidade' => $contextoAprendizado['modalidade_contexto'],
+                            'risco_atraso_percentual' => $riscoAtrasoPercentual,
                             'sla_horas' => $slaHoras,
+                            'sla_sugerido_horas' => $slaSugeridoHoras,
                         ]
                     );
                 } else {
@@ -253,7 +283,12 @@ class PropostaAlertaOrquestradorService
                     'proposta_id' => $propostaId,
                     'tipo_alerta' => $tipoAlerta,
                     'prioridade' => $prioridade,
+                    'contexto_orgao_nome' => $contextoAprendizado['orgao_nome_contexto'],
+                    'contexto_modalidade' => $contextoAprendizado['modalidade_contexto'],
+                    'risco_atraso_percentual' => $riscoAtrasoPercentual,
                     'sla_horas' => $slaHoras,
+                    'sla_sugerido_horas' => $slaSugeridoHoras,
+                    'fator_priorizacao' => $fatorPriorizacao,
                 ],
                 $empresaId,
                 isset($responsavel['id']) ? (int) $responsavel['id'] : null
@@ -441,6 +476,27 @@ class PropostaAlertaOrquestradorService
 
             $resultadoWinLoss = $this->resolverResultadoWinLoss($propostaId, $empresaId);
             $houveEscalonamento = isset($playbook['escalonado_em']) && $playbook['escalonado_em'] !== null;
+            $contextoAprendizado = $this->resolverContextoAprendizado(
+                isset($playbook['contexto_orgao_nome']) ? (string) $playbook['contexto_orgao_nome'] : null,
+                isset($playbook['contexto_modalidade']) ? (string) $playbook['contexto_modalidade'] : null
+            );
+            if (
+                $contextoAprendizado['orgao_nome_contexto'] === PropostaAlertaPlaybookRepository::CONTEXTO_GERAL
+                || $contextoAprendizado['modalidade_contexto'] === PropostaAlertaPlaybookRepository::CONTEXTO_GERAL
+            ) {
+                $propostaContexto = $this->propostaRepository->findByIdAndEmpresa($propostaId, $empresaId);
+                if ($propostaContexto !== null) {
+                    $contextoAprendizado = $this->resolverContextoAprendizado(
+                        $propostaContexto->editalOrgaoNome,
+                        $propostaContexto->editalModalidade
+                    );
+                }
+            }
+            $tempoPrimeiraAcaoHoras = $this->calcularTempoPrimeiraAcaoHoras(
+                isset($playbook['criado_em']) ? (string) $playbook['criado_em'] : null,
+                isset($playbook['primeira_atividade_em']) ? (string) $playbook['primeira_atividade_em'] : null
+            );
+            $slaBaseHoras = $this->resolverSlaBaseHoras($tipoAlerta);
             $aprendizadoResumo = $this->gerarAprendizadoResumo(
                 $tipoAlerta,
                 $resultadoWinLoss,
@@ -477,13 +533,39 @@ class PropostaAlertaOrquestradorService
                     'tipo_alerta' => $tipoAlerta,
                     'proposta_id' => $propostaId,
                     'houve_escalonamento' => $houveEscalonamento ? 1 : 0,
+                    'contexto_orgao_nome' => $contextoAprendizado['orgao_nome_contexto'],
+                    'contexto_modalidade' => $contextoAprendizado['modalidade_contexto'],
+                    'tempo_primeira_acao_horas' => $tempoPrimeiraAcaoHoras,
                 ]
             );
-            $this->playbookRepository->registrarAprendizado(
+            $aprendizadoAtualizado = $this->playbookRepository->registrarAprendizado(
                 $empresaId,
                 $tipoAlerta,
+                $contextoAprendizado['orgao_nome_contexto'],
+                $contextoAprendizado['modalidade_contexto'],
                 $resultadoWinLoss,
-                $houveEscalonamento
+                $houveEscalonamento,
+                $tempoPrimeiraAcaoHoras,
+                $slaBaseHoras
+            );
+            $this->playbookRepository->registrarEvento(
+                $playbookId,
+                $empresaId,
+                'APRENDIZADO_ATUALIZADO',
+                'Aprendizado contextual consolidado para o tipo de alerta.',
+                [
+                    'tipo_alerta' => $tipoAlerta,
+                    'contexto_orgao_nome' => $contextoAprendizado['orgao_nome_contexto'],
+                    'contexto_modalidade' => $contextoAprendizado['modalidade_contexto'],
+                    'total_casos' => (int) ($aprendizadoAtualizado['total_casos'] ?? 0),
+                    'win_rate' => (float) ($aprendizadoAtualizado['win_rate'] ?? 0.0),
+                    'loss_rate' => (float) ($aprendizadoAtualizado['loss_rate'] ?? 0.0),
+                    'taxa_escalonamento_percentual' => (float) ($aprendizadoAtualizado['taxa_escalonamento_percentual'] ?? 0.0),
+                    'tempo_medio_primeira_acao_horas' => (float) ($aprendizadoAtualizado['tempo_medio_primeira_acao_horas'] ?? 0.0),
+                    'risco_atraso_percentual' => (float) ($aprendizadoAtualizado['risco_atraso_percentual'] ?? 0.0),
+                    'sla_sugerido_horas' => (float) ($aprendizadoAtualizado['sla_sugerido_horas'] ?? 0.0),
+                    'prioridade_sugerida' => (string) ($aprendizadoAtualizado['prioridade_sugerida'] ?? 'MEDIA'),
+                ]
             );
 
             $this->auditService->record(
@@ -495,6 +577,30 @@ class PropostaAlertaOrquestradorService
                     'tipo_alerta' => $tipoAlerta,
                     'proposta_id' => $propostaId,
                     'aprendizado' => $aprendizadoResumo,
+                    'contexto_orgao_nome' => $contextoAprendizado['orgao_nome_contexto'],
+                    'contexto_modalidade' => $contextoAprendizado['modalidade_contexto'],
+                    'tempo_primeira_acao_horas' => $tempoPrimeiraAcaoHoras,
+                ],
+                $empresaId,
+                isset($playbook['responsavel_usuario_id']) ? (int) $playbook['responsavel_usuario_id'] : null
+            );
+            $this->auditService->record(
+                'ALERTA_PLAYBOOK_APRENDIZADO_ATUALIZADO',
+                'proposta_alerta_aprendizado_regras',
+                isset($aprendizadoAtualizado['id']) ? (int) $aprendizadoAtualizado['id'] : null,
+                [
+                    'tipo_alerta' => $tipoAlerta,
+                    'contexto_orgao_nome' => $contextoAprendizado['orgao_nome_contexto'],
+                    'contexto_modalidade' => $contextoAprendizado['modalidade_contexto'],
+                    'total_casos' => (int) ($aprendizadoAtualizado['total_casos'] ?? 0),
+                    'win_rate' => (float) ($aprendizadoAtualizado['win_rate'] ?? 0.0),
+                    'loss_rate' => (float) ($aprendizadoAtualizado['loss_rate'] ?? 0.0),
+                    'taxa_escalonamento_percentual' => (float) ($aprendizadoAtualizado['taxa_escalonamento_percentual'] ?? 0.0),
+                    'tempo_medio_primeira_acao_horas' => (float) ($aprendizadoAtualizado['tempo_medio_primeira_acao_horas'] ?? 0.0),
+                    'risco_atraso_percentual' => (float) ($aprendizadoAtualizado['risco_atraso_percentual'] ?? 0.0),
+                    'sla_sugerido_horas' => (float) ($aprendizadoAtualizado['sla_sugerido_horas'] ?? 0.0),
+                    'prioridade_sugerida' => (string) ($aprendizadoAtualizado['prioridade_sugerida'] ?? 'MEDIA'),
+                    'fator_priorizacao' => (float) ($aprendizadoAtualizado['fator_priorizacao'] ?? 1.0),
                 ],
                 $empresaId,
                 isset($playbook['responsavel_usuario_id']) ? (int) $playbook['responsavel_usuario_id'] : null
@@ -648,11 +754,19 @@ class PropostaAlertaOrquestradorService
         };
     }
 
-    private function resolverSlaHoras(string $tipoAlerta, float $fatorPriorizacao): int
+    /**
+     * @param array<string, mixed>|null $regra
+     */
+    private function resolverSlaHoras(string $tipoAlerta, float $fatorPriorizacao, ?array $regra = null): int
     {
-        $base = $tipoAlerta === 'JULGAMENTO_PARADO'
-            ? $this->envInt('ALERTA_PLAYBOOK_SLA_JULGAMENTO_PARADO_HORAS', 36)
-            : $this->envInt('ALERTA_PLAYBOOK_SLA_SEM_RESULTADO_HORAS', 48);
+        if ($regra !== null && isset($regra['sla_sugerido_horas']) && is_numeric($regra['sla_sugerido_horas'])) {
+            $slaSugerido = (int) $regra['sla_sugerido_horas'];
+            if ($slaSugerido > 0) {
+                return max(6, min(240, $slaSugerido));
+            }
+        }
+
+        $base = $this->resolverSlaBaseHoras($tipoAlerta);
 
         if ($base < 1) {
             $base = 24;
@@ -667,6 +781,100 @@ class PropostaAlertaOrquestradorService
         }
 
         return $sla;
+    }
+
+    /**
+     * @param array<string, mixed>|null $regra
+     */
+    private function resolverSlaSugeridoHoras(int $slaHoras, ?array $regra): int
+    {
+        if ($regra !== null && isset($regra['sla_sugerido_horas']) && is_numeric($regra['sla_sugerido_horas'])) {
+            $sla = (int) $regra['sla_sugerido_horas'];
+            if ($sla > 0) {
+                return max(6, min(240, $sla));
+            }
+        }
+
+        return max(6, min(240, $slaHoras));
+    }
+
+    /**
+     * @param array<string, mixed>|null $regra
+     */
+    private function resolverRiscoAtrasoPercentual(string $prioridade, ?array $regra): float
+    {
+        if ($regra !== null && isset($regra['risco_atraso_percentual']) && is_numeric($regra['risco_atraso_percentual'])) {
+            $risco = (float) $regra['risco_atraso_percentual'];
+            if ($risco > 0.0) {
+                return round(max(0.0, min(100.0, $risco)), 2);
+            }
+        }
+
+        return match ($prioridade) {
+            'ALTA' => 70.0,
+            'BAIXA' => 25.0,
+            default => 45.0,
+        };
+    }
+
+    private function resolverSlaBaseHoras(string $tipoAlerta): int
+    {
+        $base = $tipoAlerta === 'JULGAMENTO_PARADO'
+            ? $this->envInt('ALERTA_PLAYBOOK_SLA_JULGAMENTO_PARADO_HORAS', 36)
+            : $this->envInt('ALERTA_PLAYBOOK_SLA_SEM_RESULTADO_HORAS', 48);
+
+        return $base > 0 ? $base : 24;
+    }
+
+    /**
+     * @return array{orgao_nome_contexto: string, modalidade_contexto: string}
+     */
+    private function resolverContextoAprendizado(?string $orgaoNome, ?string $modalidade): array
+    {
+        return [
+            'orgao_nome_contexto' => $this->normalizarContextoValor($orgaoNome, 255),
+            'modalidade_contexto' => $this->normalizarContextoValor($modalidade, 120),
+        ];
+    }
+
+    private function normalizarContextoValor(?string $value, int $limit): string
+    {
+        $text = trim((string) $value);
+        if ($text !== '') {
+            $text = function_exists('mb_strtoupper')
+                ? (string) mb_strtoupper($text, 'UTF-8')
+                : strtoupper($text);
+        }
+        if ($text === '') {
+            return PropostaAlertaPlaybookRepository::CONTEXTO_GERAL;
+        }
+
+        $text = preg_replace('/\s+/', ' ', $text) ?? $text;
+        if ($limit <= 0) {
+            return $text;
+        }
+
+        if (function_exists('mb_substr')) {
+            return (string) mb_substr($text, 0, $limit, 'UTF-8');
+        }
+
+        return substr($text, 0, $limit);
+    }
+
+    private function calcularTempoPrimeiraAcaoHoras(?string $criadoEm, ?string $primeiraAtividadeEm): ?float
+    {
+        $criado = $this->parseDateTime($criadoEm);
+        $primeiraAtividade = $this->parseDateTime($primeiraAtividadeEm);
+        if (!$criado instanceof DateTimeImmutable || !$primeiraAtividade instanceof DateTimeImmutable) {
+            return null;
+        }
+
+        $diffSegundos = $primeiraAtividade->getTimestamp() - $criado->getTimestamp();
+        if ($diffSegundos <= 0) {
+            return null;
+        }
+
+        return round($diffSegundos / 3600, 2);
     }
 
     /**

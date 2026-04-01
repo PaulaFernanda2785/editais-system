@@ -38,6 +38,9 @@ $orquestradorEscalonados = isset($orquestrador['escalonados']) && is_array($orqu
 $orquestradorAprendizado = isset($orquestrador['aprendizado']) && is_array($orquestrador['aprendizado'])
     ? $orquestrador['aprendizado']
     : [];
+$orquestradorTopContextos = isset($orquestrador['top_contextos_criticos']) && is_array($orquestrador['top_contextos_criticos'])
+    ? $orquestrador['top_contextos_criticos']
+    : [];
 $orquestradorEvidencias = isset($orquestrador['evidencias']) && is_array($orquestrador['evidencias'])
     ? $orquestrador['evidencias']
     : [];
@@ -287,6 +290,10 @@ $isAdmin = in_array(strtoupper($perfilRaw), ['SUPER_ADMIN', 'ADMIN'], true);
                     Tempo medio 1a acao: <strong><?= number_format((float) ($orquestradorExecutivoResumo['tempo_medio_primeira_atividade_horas'] ?? 0), 2, ',', '.') ?>h</strong>
                     | Tempo medio encerramento: <strong><?= number_format((float) ($orquestradorExecutivoResumo['tempo_medio_encerramento_horas'] ?? 0), 2, ',', '.') ?>h</strong>
                 </p>
+                <p>
+                    Risco de atraso: <strong><?= number_format((float) ($orquestradorExecutivoResumo['risco_atraso_percentual'] ?? 0), 1, ',', '.') ?>%</strong>
+                    | SLA sugerido: <strong><?= number_format((float) ($orquestradorExecutivoResumo['sla_sugerido_horas'] ?? 0), 1, ',', '.') ?>h</strong>
+                </p>
 
                 <h4>Escalonamento por nivel</h4>
                 <?php if ($orquestradorExecutivoNivel === []): ?>
@@ -317,6 +324,10 @@ $isAdmin = in_array(strtoupper($perfilRaw), ['SUPER_ADMIN', 'ADMIN'], true);
                                     : ($prioridade === 'BAIXA' ? 'badge-prio-baixa' : 'badge-prio-media');
                                 $progresso = (float) ($item['progresso_percentual'] ?? 0);
                                 $nivelEscalonamento = max(1, (int) ($item['escalonamento_nivel'] ?? 1));
+                                $contextoOrgao = (string) ($item['contexto_orgao_nome'] ?? $item['orgao_nome'] ?? 'GERAL');
+                                $contextoModalidade = (string) ($item['contexto_modalidade'] ?? $item['modalidade'] ?? 'GERAL');
+                                $riscoAtrasoItem = (float) ($item['risco_atraso_percentual'] ?? 0);
+                                $slaSugeridoItem = (float) ($item['sla_sugerido_horas'] ?? 0);
                             ?>
                             <li>
                                 <span class="badge badge-escalado">ESCALADO</span>
@@ -330,6 +341,9 @@ $isAdmin = in_array(strtoupper($perfilRaw), ['SUPER_ADMIN', 'ADMIN'], true);
                                 - nivel L<?= $nivelEscalonamento ?>
                                 - responsavel <?= htmlspecialchars((string) ($item['responsavel_nome'] ?? '-'), ENT_QUOTES, 'UTF-8') ?>
                                 - SLA <?= htmlspecialchars((string) ($item['prazo_sla_em'] ?? '-'), ENT_QUOTES, 'UTF-8') ?>
+                                - SLA sugerido <?= number_format($slaSugeridoItem, 1, ',', '.') ?>h
+                                - risco atraso <?= number_format($riscoAtrasoItem, 1, ',', '.') ?>%
+                                - contexto <?= htmlspecialchars($contextoOrgao, ENT_QUOTES, 'UTF-8') ?>/<?= htmlspecialchars($contextoModalidade, ENT_QUOTES, 'UTF-8') ?>
                             </li>
                         <?php endforeach; ?>
                     </ul>
@@ -349,13 +363,23 @@ $isAdmin = in_array(strtoupper($perfilRaw), ['SUPER_ADMIN', 'ADMIN'], true);
                                     'ESCALONADO' => 'ESCALONADO',
                                     'ENCERRADO' => 'ENCERRADO',
                                     'REABERTO' => 'REABERTO',
+                                    'APRENDIZADO_ATUALIZADO' => 'APRENDIZADO',
                                     default => $tipoEvento !== '' ? $tipoEvento : 'EVENTO',
                                 };
                                 $detalhesEvento = isset($evento['detalhes']) && is_array($evento['detalhes'])
                                     ? $evento['detalhes']
                                     : [];
                                 $resumoDetalhe = '';
-                                if ($tipoEvento === 'PROGRESSO_ATUALIZADO') {
+                                if ($tipoEvento === 'PLAYBOOK_CRIADO' || $tipoEvento === 'REABERTO') {
+                                    $slaSugeridoEvento = isset($detalhesEvento['sla_sugerido_horas']) ? (float) $detalhesEvento['sla_sugerido_horas'] : null;
+                                    $riscoEvento = isset($detalhesEvento['risco_atraso_percentual']) ? (float) $detalhesEvento['risco_atraso_percentual'] : null;
+                                    if ($slaSugeridoEvento !== null) {
+                                        $resumoDetalhe = ' | SLA sugerido ' . number_format($slaSugeridoEvento, 1, ',', '.') . 'h';
+                                    }
+                                    if ($riscoEvento !== null) {
+                                        $resumoDetalhe .= ' | risco atraso ' . number_format($riscoEvento, 1, ',', '.') . '%';
+                                    }
+                                } elseif ($tipoEvento === 'PROGRESSO_ATUALIZADO') {
                                     $anterior = isset($detalhesEvento['progresso_anterior']) ? (float) $detalhesEvento['progresso_anterior'] : null;
                                     $atual = isset($detalhesEvento['progresso_atual']) ? (float) $detalhesEvento['progresso_atual'] : null;
                                     if ($anterior !== null && $atual !== null) {
@@ -376,6 +400,19 @@ $isAdmin = in_array(strtoupper($perfilRaw), ['SUPER_ADMIN', 'ADMIN'], true);
                                     if ($resultadoWinLoss !== '') {
                                         $resumoDetalhe = ' | resultado: ' . $resultadoWinLoss;
                                     }
+                                } elseif ($tipoEvento === 'APRENDIZADO_ATUALIZADO') {
+                                    $riscoEvento = isset($detalhesEvento['risco_atraso_percentual']) ? (float) $detalhesEvento['risco_atraso_percentual'] : null;
+                                    $slaSugeridoEvento = isset($detalhesEvento['sla_sugerido_horas']) ? (float) $detalhesEvento['sla_sugerido_horas'] : null;
+                                    $casosEvento = isset($detalhesEvento['total_casos']) ? (int) $detalhesEvento['total_casos'] : null;
+                                    if ($casosEvento !== null) {
+                                        $resumoDetalhe = ' | casos: ' . $casosEvento;
+                                    }
+                                    if ($riscoEvento !== null) {
+                                        $resumoDetalhe .= ' | risco atraso ' . number_format($riscoEvento, 1, ',', '.') . '%';
+                                    }
+                                    if ($slaSugeridoEvento !== null) {
+                                        $resumoDetalhe .= ' | SLA sugerido ' . number_format($slaSugeridoEvento, 1, ',', '.') . 'h';
+                                    }
                                 }
                             ?>
                             <li>
@@ -392,7 +429,47 @@ $isAdmin = in_array(strtoupper($perfilRaw), ['SUPER_ADMIN', 'ADMIN'], true);
                     </ul>
                 <?php endif; ?>
 
-                <h4>Aprendizado win/loss por tipo de alerta</h4>
+                <h4>Top contextos criticos</h4>
+                <?php if ($orquestradorTopContextos === []): ?>
+                    <p class="muted">Sem contexto critico consolidado no momento.</p>
+                <?php else: ?>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Tipo</th>
+                                <th>Orgao</th>
+                                <th>Modalidade</th>
+                                <th>Casos</th>
+                                <th>Risco atraso</th>
+                                <th>SLA sugerido</th>
+                                <th>Escalonamento</th>
+                                <th>Win rate</th>
+                                <th>Prioridade</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($orquestradorTopContextos as $row): ?>
+                                <?php
+                                    $tipo = (string) ($row['tipo_alerta'] ?? '');
+                                    $tipoLabel = $tipo === 'JULGAMENTO_PARADO' ? 'JULGAMENTO_PARADO' : 'SEM_RESULTADO';
+                                ?>
+                                <tr>
+                                    <td><?= htmlspecialchars($tipoLabel, ENT_QUOTES, 'UTF-8') ?></td>
+                                    <td><?= htmlspecialchars((string) ($row['orgao_nome_contexto'] ?? 'GERAL'), ENT_QUOTES, 'UTF-8') ?></td>
+                                    <td><?= htmlspecialchars((string) ($row['modalidade_contexto'] ?? 'GERAL'), ENT_QUOTES, 'UTF-8') ?></td>
+                                    <td><?= (int) ($row['total_casos'] ?? 0) ?></td>
+                                    <td><?= number_format((float) ($row['risco_atraso_percentual'] ?? 0), 1, ',', '.') ?>%</td>
+                                    <td><?= number_format((float) ($row['sla_sugerido_horas'] ?? 0), 1, ',', '.') ?>h</td>
+                                    <td><?= number_format((float) ($row['taxa_escalonamento_percentual'] ?? 0), 1, ',', '.') ?>%</td>
+                                    <td><?= number_format((float) ($row['win_rate'] ?? 0), 1, ',', '.') ?>%</td>
+                                    <td><?= htmlspecialchars((string) ($row['prioridade_sugerida'] ?? 'MEDIA'), ENT_QUOTES, 'UTF-8') ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                <?php endif; ?>
+
+                <h4>Aprendizado win/loss por contexto</h4>
                 <?php if ($orquestradorAprendizado === []): ?>
                     <p class="muted">Sem historico suficiente para ajustar priorizacao.</p>
                 <?php else: ?>
@@ -400,11 +477,17 @@ $isAdmin = in_array(strtoupper($perfilRaw), ['SUPER_ADMIN', 'ADMIN'], true);
                         <thead>
                             <tr>
                                 <th>Tipo</th>
+                                <th>Orgao</th>
+                                <th>Modalidade</th>
                                 <th>Casos</th>
                                 <th>Wins</th>
                                 <th>Losses</th>
                                 <th>Neutros</th>
                                 <th>Win rate</th>
+                                <th>Tempo 1a acao</th>
+                                <th>Escalonamento</th>
+                                <th>Risco atraso</th>
+                                <th>SLA sugerido</th>
                                 <th>Prioridade sugerida</th>
                                 <th>Fator</th>
                             </tr>
@@ -417,11 +500,17 @@ $isAdmin = in_array(strtoupper($perfilRaw), ['SUPER_ADMIN', 'ADMIN'], true);
                                 ?>
                                 <tr>
                                     <td><?= htmlspecialchars($tipoLabel, ENT_QUOTES, 'UTF-8') ?></td>
+                                    <td><?= htmlspecialchars((string) ($row['orgao_nome_contexto'] ?? 'GERAL'), ENT_QUOTES, 'UTF-8') ?></td>
+                                    <td><?= htmlspecialchars((string) ($row['modalidade_contexto'] ?? 'GERAL'), ENT_QUOTES, 'UTF-8') ?></td>
                                     <td><?= (int) ($row['total_casos'] ?? 0) ?></td>
                                     <td><?= (int) ($row['wins'] ?? 0) ?></td>
                                     <td><?= (int) ($row['losses'] ?? 0) ?></td>
                                     <td><?= (int) ($row['neutros'] ?? 0) ?></td>
                                     <td><?= number_format((float) ($row['win_rate'] ?? 0), 1, ',', '.') ?>%</td>
+                                    <td><?= number_format((float) ($row['tempo_medio_primeira_acao_horas'] ?? 0), 2, ',', '.') ?>h</td>
+                                    <td><?= number_format((float) ($row['taxa_escalonamento_percentual'] ?? 0), 1, ',', '.') ?>%</td>
+                                    <td><?= number_format((float) ($row['risco_atraso_percentual'] ?? 0), 1, ',', '.') ?>%</td>
+                                    <td><?= number_format((float) ($row['sla_sugerido_horas'] ?? 0), 1, ',', '.') ?>h</td>
                                     <td><?= htmlspecialchars((string) ($row['prioridade_sugerida'] ?? 'MEDIA'), ENT_QUOTES, 'UTF-8') ?></td>
                                     <td><?= number_format((float) ($row['fator_priorizacao'] ?? 1), 2, ',', '.') ?></td>
                                 </tr>

@@ -213,11 +213,14 @@ class PropostaAlertaNotificacaoService
                     'taxa_escalonamento_percentual' => 0.0,
                     'tempo_medio_primeira_atividade_horas' => 0.0,
                     'tempo_medio_encerramento_horas' => 0.0,
+                    'risco_atraso_percentual' => 0.0,
+                    'sla_sugerido_horas' => 0.0,
                 ],
                 'por_nivel' => [],
             ],
             'escalonados' => [],
             'aprendizado' => [],
+            'top_contextos_criticos' => [],
             'evidencias' => [],
         ];
         try {
