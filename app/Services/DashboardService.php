@@ -9,6 +9,7 @@ use App\Repositories\FavoritoRepository;
 use App\Repositories\FavoritoStatusHistoricoRepository;
 use App\Repositories\FavoritoTarefaRepository;
 use App\Repositories\PropostaExecucaoRepository;
+use App\Repositories\PropostaResultadoRepository;
 use Throwable;
 
 class DashboardService
@@ -18,19 +19,22 @@ class DashboardService
     private FavoritoTarefaRepository $favoritoTarefaRepository;
     private FavoritoStatusHistoricoRepository $historicoRepository;
     private PropostaExecucaoRepository $propostaRepository;
+    private PropostaResultadoRepository $propostaResultadoRepository;
 
     public function __construct(
         ?CorrespondenciaRepository $correspondenciaRepository = null,
         ?FavoritoRepository $favoritoRepository = null,
         ?FavoritoTarefaRepository $favoritoTarefaRepository = null,
         ?FavoritoStatusHistoricoRepository $historicoRepository = null,
-        ?PropostaExecucaoRepository $propostaRepository = null
+        ?PropostaExecucaoRepository $propostaRepository = null,
+        ?PropostaResultadoRepository $propostaResultadoRepository = null
     ) {
         $this->correspondenciaRepository = $correspondenciaRepository ?? new CorrespondenciaRepository();
         $this->favoritoRepository = $favoritoRepository ?? new FavoritoRepository();
         $this->favoritoTarefaRepository = $favoritoTarefaRepository ?? new FavoritoTarefaRepository();
         $this->historicoRepository = $historicoRepository ?? new FavoritoStatusHistoricoRepository();
         $this->propostaRepository = $propostaRepository ?? new PropostaExecucaoRepository();
+        $this->propostaResultadoRepository = $propostaResultadoRepository ?? new PropostaResultadoRepository();
     }
 
     /**
@@ -58,6 +62,18 @@ class DashboardService
             $propostasRevisao = 0;
             $propostasAprovadas = 0;
             $propostasEnviadas = 0;
+        }
+        try {
+            $resultados = $this->propostaResultadoRepository->countByEmpresaGroupedSituacao($empresaId);
+            $resultadosTotal = array_sum($resultados);
+            $propostasVencedoras = $resultados['VENCEDORA'] ?? 0;
+            $propostasNaoVencedoras = $resultados['NAO_VENCEDORA'] ?? 0;
+            $propostasDesclassificadas = $resultados['DESCLASSIFICADA'] ?? 0;
+        } catch (Throwable) {
+            $resultadosTotal = 0;
+            $propostasVencedoras = 0;
+            $propostasNaoVencedoras = 0;
+            $propostasDesclassificadas = 0;
         }
         try {
             $alertasVencendo = $this->favoritoTarefaRepository->countAlertasVencendo($empresaId, 2);
@@ -93,6 +109,11 @@ class DashboardService
             'propostas_aprovadas' => $propostasAprovadas,
             'propostas_enviadas' => $propostasEnviadas,
             'propostas_total' => $propostasRascunho + $propostasRevisao + $propostasAprovadas + $propostasEnviadas,
+            'propostas_resultados_total' => $resultadosTotal,
+            'propostas_vencedoras' => $propostasVencedoras,
+            'propostas_nao_vencedoras' => $propostasNaoVencedoras,
+            'propostas_desclassificadas' => $propostasDesclassificadas,
+            'taxa_sucesso_propostas' => $propostasEnviadas > 0 ? round(($propostasVencedoras / $propostasEnviadas) * 100, 1) : 0.0,
             'tarefas_vencendo_48h' => $alertasVencendo,
             'tarefas_vencidas' => $alertasVencidas,
             'taxa_analise_para_proposta' => $taxaAnaliseParaProposta,

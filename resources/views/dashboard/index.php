@@ -161,6 +161,18 @@ $isAdmin = in_array(strtoupper($perfilRaw), ['SUPER_ADMIN', 'ADMIN'], true);
                 <h3>Propostas enviadas</h3>
                 <p><?= (int) ($resumo['propostas_enviadas'] ?? 0) ?></p>
             </article>
+            <article class="card">
+                <h3>Resultados de propostas</h3>
+                <p><?= (int) ($resumo['propostas_resultados_total'] ?? 0) ?></p>
+            </article>
+            <article class="card">
+                <h3>Propostas vencedoras</h3>
+                <p><?= (int) ($resumo['propostas_vencedoras'] ?? 0) ?></p>
+            </article>
+            <article class="card">
+                <h3>Taxa sucesso propostas</h3>
+                <p><?= number_format((float) ($resumo['taxa_sucesso_propostas'] ?? 0), 1, ',', '.') ?>%</p>
+            </article>
         </section>
     </div>
 </body>

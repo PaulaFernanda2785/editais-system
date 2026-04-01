@@ -62,9 +62,12 @@ class PropostaController extends Controller
             'tarefas' => $detalhe['tarefas'],
             'aprovacoes' => $detalhe['aprovacoes'],
             'submissoes' => $detalhe['submissoes'],
+            'resultados' => $detalhe['resultados'],
+            'ultimoResultado' => $detalhe['ultimo_resultado'],
             'aprovacaoPendente' => $detalhe['aprovacao_pendente'],
             'statusPermitidos' => $detalhe['status_permitidos'],
             'canaisSubmissao' => $detalhe['canais_submissao'],
+            'situacoesResultado' => $detalhe['situacoes_resultado'],
             'message' => $request->pullSession('propostas.message', null),
         ]);
     }
@@ -157,6 +160,23 @@ class PropostaController extends Controller
         $propostaId = (int) $request->routeParam('id', 0);
 
         $resultado = $this->propostaService->registrarSubmissao(
+            $empresaId,
+            $usuarioId > 0 ? $usuarioId : null,
+            $propostaId,
+            $request->input()
+        );
+
+        $request->setSession('propostas.message', $resultado['mensagem'] ?? null);
+        $response->redirect('/propostas/' . $propostaId);
+    }
+
+    public function registrarResultado(Request $request, Response $response): void
+    {
+        $empresaId = (int) $request->session('auth.empresa_id', 0);
+        $usuarioId = (int) $request->session('auth.user_id', 0);
+        $propostaId = (int) $request->routeParam('id', 0);
+
+        $resultado = $this->propostaService->registrarResultado(
             $empresaId,
             $usuarioId > 0 ? $usuarioId : null,
             $propostaId,

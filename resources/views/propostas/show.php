@@ -10,8 +10,11 @@ $favorito = isset($favorito) ? $favorito : null;
 $tarefas = isset($tarefas) && is_array($tarefas) ? $tarefas : [];
 $aprovacoes = isset($aprovacoes) && is_array($aprovacoes) ? $aprovacoes : [];
 $submissoes = isset($submissoes) && is_array($submissoes) ? $submissoes : [];
+$resultados = isset($resultados) && is_array($resultados) ? $resultados : [];
+$ultimoResultado = $ultimoResultado ?? null;
 $aprovacaoPendente = $aprovacaoPendente ?? null;
 $canaisSubmissao = isset($canaisSubmissao) && is_array($canaisSubmissao) ? $canaisSubmissao : [];
+$situacoesResultado = isset($situacoesResultado) && is_array($situacoesResultado) ? $situacoesResultado : [];
 $message = isset($message) ? (string) $message : null;
 
 if ($proposta === null) {
@@ -28,6 +31,14 @@ $badgeStatusClass = match ($statusAtual) {
     'APROVADA' => 'badge-aprovada',
     'ENVIADA' => 'badge-enviada',
     default => 'badge-rascunho',
+};
+
+$badgeResultadoClass = static function (?string $situacao): string {
+    return match (strtoupper((string) $situacao)) {
+        'VENCEDORA' => 'badge-aprovada',
+        'NAO_VENCEDORA', 'DESCLASSIFICADA', 'ANULADA' => 'badge-revisao',
+        default => 'badge-enviada',
+    };
 };
 
 $formatarDataHora = static function (?string $value): string {
@@ -53,6 +64,7 @@ $formatarDataHora = static function (?string $value): string {
 };
 
 $dataSubmissaoDefault = date('Y-m-d\\TH:i');
+$dataResultadoDefault = date('Y-m-d\\TH:i');
 ?>
 <!doctype html>
 <html lang="pt-BR">
@@ -129,6 +141,18 @@ $dataSubmissaoDefault = date('Y-m-d\\TH:i');
             <article>
                 <h3>Geracao</h3>
                 <p><?= $proposta->geradaAutomatica ? 'Automatica (assistente)' : 'Manual' ?></p>
+            </article>
+            <article>
+                <h3>Resultado atual</h3>
+                <?php if ($ultimoResultado !== null): ?>
+                    <p>
+                        <span class="badge <?= $badgeResultadoClass($ultimoResultado->situacao ?? null) ?>">
+                            <?= htmlspecialchars((string) ($ultimoResultado->situacao ?? '-'), ENT_QUOTES, 'UTF-8') ?>
+                        </span>
+                    </p>
+                <?php else: ?>
+                    <p>-</p>
+                <?php endif; ?>
             </article>
         </section>
 
@@ -218,7 +242,52 @@ $dataSubmissaoDefault = date('Y-m-d\\TH:i');
                     </div>
                 </form>
             <?php else: ?>
-                <p class="muted">Envio ja registrado. Consulte o historico de submissao abaixo.</p>
+                <p class="muted">Envio registrado. Agora acompanhe o resultado oficial da disputa.</p>
+                <?php if ($ultimoResultado !== null): ?>
+                    <p class="muted">
+                        Ultimo resultado: <strong><?= htmlspecialchars((string) ($ultimoResultado->situacao ?? '-'), ENT_QUOTES, 'UTF-8') ?></strong>
+                        em <?= htmlspecialchars($formatarDataHora($ultimoResultado->dataResultado ?? null), ENT_QUOTES, 'UTF-8') ?>.
+                    </p>
+                <?php endif; ?>
+                <form method="POST" action="/propostas/<?= (int) $proposta->id ?>/registrar-resultado">
+                    <div class="grid">
+                        <article>
+                            <label for="situacao">Situacao do resultado</label>
+                            <select id="situacao" name="situacao">
+                                <?php foreach ($situacoesResultado as $situacao): ?>
+                                    <option value="<?= htmlspecialchars((string) $situacao, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars((string) $situacao, ENT_QUOTES, 'UTF-8') ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </article>
+                        <article>
+                            <label for="data_resultado">Data/hora do resultado</label>
+                            <input id="data_resultado" name="data_resultado" type="datetime-local" value="<?= htmlspecialchars($dataResultadoDefault, ENT_QUOTES, 'UTF-8') ?>">
+                        </article>
+                        <article>
+                            <label for="valor_homologado">Valor homologado (R$)</label>
+                            <input id="valor_homologado" name="valor_homologado" type="number" min="0" step="0.01">
+                        </article>
+                        <article>
+                            <label for="colocacao">Colocacao</label>
+                            <input id="colocacao" name="colocacao" type="number" min="1" step="1" placeholder="Ex.: 1">
+                        </article>
+                        <article style="grid-column: 1 / -1;">
+                            <label for="link_ata">Link da ata/resultado</label>
+                            <input id="link_ata" name="link_ata" type="url" maxlength="500" placeholder="https://...">
+                        </article>
+                        <article style="grid-column: 1 / -1;">
+                            <label for="motivo">Motivo do resultado</label>
+                            <textarea id="motivo" name="motivo" rows="3"></textarea>
+                        </article>
+                        <article style="grid-column: 1 / -1;">
+                            <label for="observacao_resultado">Observacao interna</label>
+                            <textarea id="observacao_resultado" name="observacao" rows="3"></textarea>
+                        </article>
+                    </div>
+                    <div class="actions" style="margin-top: 10px;">
+                        <button class="btn btn-primary" type="submit">Registrar resultado</button>
+                    </div>
+                </form>
             <?php endif; ?>
         </section>
 
@@ -345,6 +414,49 @@ $dataSubmissaoDefault = date('Y-m-d\\TH:i');
                                     <?= htmlspecialchars((string) ($submissao->usuarioNome ?? '-'), ENT_QUOTES, 'UTF-8') ?>
                                     <?php if (!empty($submissao->observacao)): ?>
                                         <br><span class="muted"><?= nl2br(htmlspecialchars((string) $submissao->observacao, ENT_QUOTES, 'UTF-8')) ?></span>
+                                    <?php endif; ?>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            <?php endif; ?>
+        </section>
+
+        <section class="panel">
+            <h3>Historico de resultados</h3>
+            <?php if ($resultados === []): ?>
+                <p class="muted">Nenhum resultado registrado ate o momento.</p>
+            <?php else: ?>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Situacao</th>
+                            <th>Data</th>
+                            <th>Valor/Colocacao</th>
+                            <th>Registro</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($resultados as $resultado): ?>
+                            <tr>
+                                <td>#<?= (int) ($resultado->id ?? 0) ?></td>
+                                <td>
+                                    <span class="badge <?= $badgeResultadoClass($resultado->situacao ?? null) ?>">
+                                        <?= htmlspecialchars((string) ($resultado->situacao ?? '-'), ENT_QUOTES, 'UTF-8') ?>
+                                    </span>
+                                </td>
+                                <td><?= htmlspecialchars($formatarDataHora($resultado->dataResultado ?? null), ENT_QUOTES, 'UTF-8') ?></td>
+                                <td>
+                                    <?= $resultado->valorHomologado !== null ? 'R$ ' . number_format((float) $resultado->valorHomologado, 2, ',', '.') : '-' ?>
+                                    <br><span class="muted">Colocacao: <?= htmlspecialchars((string) ($resultado->colocacao ?? '-'), ENT_QUOTES, 'UTF-8') ?></span>
+                                </td>
+                                <td>
+                                    <span class="muted">Por: <?= htmlspecialchars((string) ($resultado->usuarioNome ?? '-'), ENT_QUOTES, 'UTF-8') ?></span><br>
+                                    <?= nl2br(htmlspecialchars((string) ($resultado->motivo ?? $resultado->observacao ?? '-'), ENT_QUOTES, 'UTF-8')) ?>
+                                    <?php if (!empty($resultado->linkAta)): ?>
+                                        <br><a href="<?= htmlspecialchars((string) $resultado->linkAta, ENT_QUOTES, 'UTF-8') ?>" target="_blank" rel="noopener noreferrer">Ata/resultado</a>
                                     <?php endif; ?>
                                 </td>
                             </tr>

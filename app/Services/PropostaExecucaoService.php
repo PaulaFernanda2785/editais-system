@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Repositories\FavoritoRepository;
+use App\Repositories\FavoritoStatusHistoricoRepository;
 use App\Repositories\FavoritoTarefaRepository;
 use App\Repositories\PropostaAprovacaoRepository;
 use App\Repositories\PropostaExecucaoRepository;
+use App\Repositories\PropostaResultadoRepository;
 use App\Repositories\PropostaSubmissaoRepository;
 use DateTimeImmutable;
 
@@ -23,10 +25,17 @@ class PropostaExecucaoService
      */
     private const CANAIS_SUBMISSAO = ['PORTAL', 'EMAIL', 'PRESENCIAL', 'OUTRO'];
 
+    /**
+     * @var array<int, string>
+     */
+    private const SITUACOES_RESULTADO = ['EM_JULGAMENTO', 'VENCEDORA', 'NAO_VENCEDORA', 'DESCLASSIFICADA', 'ANULADA'];
+
     private PropostaExecucaoRepository $propostaRepository;
     private PropostaAprovacaoRepository $aprovacaoRepository;
     private PropostaSubmissaoRepository $submissaoRepository;
+    private PropostaResultadoRepository $resultadoRepository;
     private FavoritoRepository $favoritoRepository;
+    private FavoritoStatusHistoricoRepository $favoritoHistoricoRepository;
     private FavoritoTarefaRepository $tarefaRepository;
     private LogService $logService;
     private AuditService $auditService;
@@ -35,7 +44,9 @@ class PropostaExecucaoService
         ?PropostaExecucaoRepository $propostaRepository = null,
         ?PropostaAprovacaoRepository $aprovacaoRepository = null,
         ?PropostaSubmissaoRepository $submissaoRepository = null,
+        ?PropostaResultadoRepository $resultadoRepository = null,
         ?FavoritoRepository $favoritoRepository = null,
+        ?FavoritoStatusHistoricoRepository $favoritoHistoricoRepository = null,
         ?FavoritoTarefaRepository $tarefaRepository = null,
         ?LogService $logService = null,
         ?AuditService $auditService = null
@@ -43,7 +54,9 @@ class PropostaExecucaoService
         $this->propostaRepository = $propostaRepository ?? new PropostaExecucaoRepository();
         $this->aprovacaoRepository = $aprovacaoRepository ?? new PropostaAprovacaoRepository();
         $this->submissaoRepository = $submissaoRepository ?? new PropostaSubmissaoRepository();
+        $this->resultadoRepository = $resultadoRepository ?? new PropostaResultadoRepository();
         $this->favoritoRepository = $favoritoRepository ?? new FavoritoRepository();
+        $this->favoritoHistoricoRepository = $favoritoHistoricoRepository ?? new FavoritoStatusHistoricoRepository();
         $this->tarefaRepository = $tarefaRepository ?? new FavoritoTarefaRepository();
         $this->logService = $logService ?? new LogService();
         $this->auditService = $auditService ?? new AuditService($this->logService);
@@ -91,6 +104,7 @@ class PropostaExecucaoService
         $tarefas = $this->tarefaRepository->listByFavorito($proposta->favoritoId, $empresaId);
         $aprovacoes = $this->aprovacaoRepository->listByProposta($propostaId, $empresaId);
         $submissoes = $this->submissaoRepository->listByProposta($propostaId, $empresaId);
+        $resultados = $this->resultadoRepository->listByProposta($propostaId, $empresaId);
 
         return [
             'proposta' => $proposta,
@@ -98,9 +112,12 @@ class PropostaExecucaoService
             'tarefas' => $tarefas,
             'aprovacoes' => $aprovacoes,
             'submissoes' => $submissoes,
+            'resultados' => $resultados,
+            'ultimo_resultado' => $resultados[0] ?? null,
             'aprovacao_pendente' => $this->aprovacaoRepository->findPendenteByProposta($propostaId, $empresaId),
             'status_permitidos' => self::STATUS_PERMITIDOS,
             'canais_submissao' => self::CANAIS_SUBMISSAO,
+            'situacoes_resultado' => self::SITUACOES_RESULTADO,
         ];
     }
 
@@ -440,16 +457,142 @@ class PropostaExecucaoService
     }
 
     /**
-     * @return array<string, int>
+     * @param array<string, mixed> $payload
+     */
+    public function registrarResultado(int $empresaId, ?int $usuarioId, int $propostaId, array $payload): array
+    {
+        $proposta = $this->propostaRepository->findByIdAndEmpresa($propostaId, $empresaId);
+        if ($proposta === null) {
+            return [
+                'sucesso' => false,
+                'mensagem' => 'Proposta nao encontrada.',
+            ];
+        }
+
+        if (strtoupper($proposta->status) !== 'ENVIADA') {
+            return [
+                'sucesso' => false,
+                'mensagem' => 'Resultado so pode ser registrado para proposta ENVIADA.',
+            ];
+        }
+
+        $situacao = $this->normalizarSituacaoResultado((string) ($payload['situacao'] ?? ''));
+        if ($situacao === null) {
+            return [
+                'sucesso' => false,
+                'mensagem' => 'Situacao de resultado invalida.',
+            ];
+        }
+
+        $dataResultado = $this->normalizarDataHora($payload['data_resultado'] ?? null);
+        if ($dataResultado === null) {
+            return [
+                'sucesso' => false,
+                'mensagem' => 'Data do resultado invalida.',
+            ];
+        }
+
+        $resultadoId = $this->resultadoRepository->create([
+            'proposta_id' => $propostaId,
+            'empresa_id' => $empresaId,
+            'usuario_id' => $usuarioId,
+            'situacao' => $situacao,
+            'data_resultado' => $dataResultado,
+            'valor_homologado' => $payload['valor_homologado'] ?? null,
+            'colocacao' => $payload['colocacao'] ?? null,
+            'motivo' => $payload['motivo'] ?? null,
+            'link_ata' => $payload['link_ata'] ?? null,
+            'observacao' => $payload['observacao'] ?? null,
+        ]);
+
+        $pipelineEncerrado = false;
+        $favorito = $this->favoritoRepository->findByIdAndEmpresa($proposta->favoritoId, $empresaId);
+        if (
+            $situacao !== 'EM_JULGAMENTO'
+            && $favorito !== null
+            && strtoupper((string) $favorito->statusAcompanhamento) !== 'ENCERRADO'
+        ) {
+            $observacao = trim((string) ($favorito->observacao ?? ''));
+            $resumoResultado = '[Resultado proposta] ' . $situacao . ' em ' . $this->normalizarDataHumana($dataResultado) . '.';
+            $novaObservacao = $observacao !== '' ? ($observacao . PHP_EOL . $resumoResultado) : $resumoResultado;
+
+            $this->favoritoRepository->updateStatusAndObservacao(
+                $proposta->favoritoId,
+                $empresaId,
+                'ENCERRADO',
+                $novaObservacao
+            );
+            $pipelineEncerrado = true;
+
+            try {
+                $this->favoritoHistoricoRepository->registrarTransicao(
+                    $proposta->favoritoId,
+                    $empresaId,
+                    $favorito->statusAcompanhamento,
+                    'ENCERRADO',
+                    $usuarioId,
+                    'proposta_resultado'
+                );
+            } catch (\Throwable) {
+                // Nao bloqueia o fluxo de resultado caso o historico de pipeline falhe.
+            }
+        }
+
+        $this->logService->info('propostas.resultado.registrar', 'Resultado de proposta registrado.', [
+            'empresa_id' => $empresaId,
+            'usuario_id' => $usuarioId,
+            'proposta_id' => $propostaId,
+            'resultado_id' => $resultadoId,
+            'situacao' => $situacao,
+        ]);
+
+        $this->auditService->record(
+            'PROPOSTA_RESULTADO_REGISTRADO',
+            'proposta_resultados',
+            $resultadoId,
+            [
+                'proposta_id' => $propostaId,
+                'situacao' => $situacao,
+                'favorito_id' => $proposta->favoritoId,
+            ],
+            $empresaId,
+            $usuarioId
+        );
+
+        $mensagem = $situacao === 'EM_JULGAMENTO'
+            ? 'Resultado parcial registrado. Pipeline mantido para acompanhamento.'
+            : ($pipelineEncerrado
+                ? 'Resultado final registrado e item do pipeline movido para ENCERRADO.'
+                : 'Resultado final registrado com sucesso.');
+
+        return [
+            'sucesso' => true,
+            'mensagem' => $mensagem,
+        ];
+    }
+
+    /**
+     * @return array<string, int|float>
      */
     public function resumoPorStatus(int $empresaId): array
     {
         $grouped = $this->propostaRepository->countByEmpresaGroupedStatus($empresaId);
+        $resultados = $this->resultadoRepository->countByEmpresaGroupedSituacao($empresaId);
+        $enviadas = $grouped['ENVIADA'] ?? 0;
+        $vencedoras = $resultados['VENCEDORA'] ?? 0;
+
         return [
             'RASCUNHO' => $grouped['RASCUNHO'] ?? 0,
             'EM_REVISAO' => $grouped['EM_REVISAO'] ?? 0,
             'APROVADA' => $grouped['APROVADA'] ?? 0,
             'ENVIADA' => $grouped['ENVIADA'] ?? 0,
+            'RESULTADOS_TOTAL' => array_sum($resultados),
+            'RESULTADO_EM_JULGAMENTO' => $resultados['EM_JULGAMENTO'] ?? 0,
+            'RESULTADO_VENCEDORA' => $vencedoras,
+            'RESULTADO_NAO_VENCEDORA' => $resultados['NAO_VENCEDORA'] ?? 0,
+            'RESULTADO_DESCLASSIFICADA' => $resultados['DESCLASSIFICADA'] ?? 0,
+            'RESULTADO_ANULADA' => $resultados['ANULADA'] ?? 0,
+            'TAXA_SUCESSO_ENVIADAS' => $enviadas > 0 ? round(($vencedoras / $enviadas) * 100, 1) : 0.0,
             'TOTAL' => array_sum($grouped),
         ];
     }
@@ -621,6 +764,16 @@ class PropostaExecucaoService
         }
 
         return $canal;
+    }
+
+    private function normalizarSituacaoResultado(string $situacao): ?string
+    {
+        $situacao = strtoupper(trim($situacao));
+        if (!in_array($situacao, self::SITUACOES_RESULTADO, true)) {
+            return null;
+        }
+
+        return $situacao;
     }
 
     private function normalizarTextoLimite(mixed $value, int $limit): ?string

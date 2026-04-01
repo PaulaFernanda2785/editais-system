@@ -195,6 +195,11 @@ $router->post('/propostas/{id}/registrar-submissao', 'PropostaController@registr
     TenantMiddleware::class,
     AssinaturaMiddleware::class,
 ]);
+$router->post('/propostas/{id}/registrar-resultado', 'PropostaController@registrarResultado', [
+    AuthMiddleware::class,
+    TenantMiddleware::class,
+    AssinaturaMiddleware::class,
+]);
 
 $router->get('/fontes', 'FonteController@index', [
     AuthMiddleware::class,

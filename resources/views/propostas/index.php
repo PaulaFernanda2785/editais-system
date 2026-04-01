@@ -99,6 +99,9 @@ $badgeStatusClass = static function (?string $status): string {
                 <article class="summary-card"><strong>Em revisao</strong><div><?= (int) ($resumo['EM_REVISAO'] ?? 0) ?></div></article>
                 <article class="summary-card"><strong>Aprovada</strong><div><?= (int) ($resumo['APROVADA'] ?? 0) ?></div></article>
                 <article class="summary-card"><strong>Enviada</strong><div><?= (int) ($resumo['ENVIADA'] ?? 0) ?></div></article>
+                <article class="summary-card"><strong>Resultados</strong><div><?= (int) ($resumo['RESULTADOS_TOTAL'] ?? 0) ?></div></article>
+                <article class="summary-card"><strong>Vencedoras</strong><div><?= (int) ($resumo['RESULTADO_VENCEDORA'] ?? 0) ?></div></article>
+                <article class="summary-card"><strong>Taxa de sucesso</strong><div><?= number_format((float) ($resumo['TAXA_SUCESSO_ENVIADAS'] ?? 0), 1, ',', '.') ?>%</div></article>
             </div>
         </section>
 
