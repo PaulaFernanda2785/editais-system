@@ -89,6 +89,7 @@ $pipelineBadgeClass = match ($pipelineStatus) {
             <div class="actions">
                 <a class="btn" href="/oportunidades">Voltar</a>
                 <a class="btn" href="/dashboard">Dashboard</a>
+                <a class="btn" href="/propostas">Propostas</a>
             </div>
         </header>
 

@@ -88,6 +88,7 @@ $badgeStatusClass = static function (?string $status): string {
             <div class="actions">
                 <a class="btn" href="/dashboard">Dashboard</a>
                 <a class="btn" href="/oportunidades">Oportunidades</a>
+                <a class="btn" href="/propostas">Propostas</a>
                 <a class="btn" href="/favoritos/relatorio/conversao">Relatorio de conversao</a>
                 <a class="btn" href="/editais">Catalogo</a>
                 <a class="btn" href="/logout">Sair</a>

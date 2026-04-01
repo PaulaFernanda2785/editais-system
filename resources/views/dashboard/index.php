@@ -52,6 +52,7 @@ $isAdmin = in_array(strtoupper($perfilRaw), ['SUPER_ADMIN', 'ADMIN'], true);
                 <a class="btn" href="/monitoramento">Perfis de monitoramento</a>
                 <a class="btn" href="/oportunidades">Oportunidades</a>
                 <a class="btn" href="/favoritos">Pipeline</a>
+                <a class="btn" href="/propostas">Propostas</a>
                 <a class="btn" href="/favoritos/relatorio/conversao">Relatorio de conversao</a>
                 <?php if ($isAdmin): ?>
                     <a class="btn" href="/fontes">Fontes de coleta</a>
@@ -147,6 +148,18 @@ $isAdmin = in_array(strtoupper($perfilRaw), ['SUPER_ADMIN', 'ADMIN'], true);
             <article class="card">
                 <h3>Conv. Proposta -> Encerrado</h3>
                 <p><?= number_format((float) ($resumo['taxa_proposta_para_encerrado'] ?? 0), 1, ',', '.') ?>%</p>
+            </article>
+            <article class="card">
+                <h3>Propostas totais</h3>
+                <p><?= (int) ($resumo['propostas_total'] ?? 0) ?></p>
+            </article>
+            <article class="card">
+                <h3>Propostas em revisao</h3>
+                <p><?= (int) ($resumo['propostas_em_revisao'] ?? 0) ?></p>
+            </article>
+            <article class="card">
+                <h3>Propostas enviadas</h3>
+                <p><?= (int) ($resumo['propostas_enviadas'] ?? 0) ?></p>
             </article>
         </section>
     </div>

@@ -105,6 +105,7 @@ $pipelineBadgeClass = static function (?string $status): string {
                 <a class="btn" href="/editais">Catalogo de editais</a>
                 <a class="btn" href="/monitoramento">Perfis</a>
                 <a class="btn" href="/favoritos">Pipeline</a>
+                <a class="btn" href="/propostas">Propostas</a>
                 <a class="btn" href="/logout">Sair</a>
             </div>
         </header>

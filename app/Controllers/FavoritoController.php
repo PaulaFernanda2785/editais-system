@@ -7,15 +7,21 @@ namespace App\Controllers;
 use App\Core\Controller;
 use App\Core\Request;
 use App\Core\Response;
+use App\Repositories\PropostaExecucaoRepository;
 use App\Services\FavoritoService;
 
 class FavoritoController extends Controller
 {
     private FavoritoService $favoritoService;
+    private PropostaExecucaoRepository $propostaRepository;
 
-    public function __construct(?FavoritoService $favoritoService = null)
+    public function __construct(
+        ?FavoritoService $favoritoService = null,
+        ?PropostaExecucaoRepository $propostaRepository = null
+    )
     {
         $this->favoritoService = $favoritoService ?? new FavoritoService();
+        $this->propostaRepository = $propostaRepository ?? new PropostaExecucaoRepository();
     }
 
     public function index(Request $request, Response $response): void
@@ -57,6 +63,8 @@ class FavoritoController extends Controller
             return;
         }
 
+        $proposta = $this->propostaRepository->findByFavoritoAndEmpresa($favoritoId, $empresaId);
+
         $response->view('favoritos/show', [
             'appName' => $_ENV['APP_NAME'] ?? 'SaaS Editais',
             'auth' => $request->session('auth', []),
@@ -67,6 +75,7 @@ class FavoritoController extends Controller
             'statusPermitidos' => $detalhe['status_permitidos'],
             'statusTarefaPermitidos' => $detalhe['status_tarefa_permitidos'],
             'usuariosResponsaveis' => $detalhe['usuarios_responsaveis'],
+            'proposta' => $proposta,
             'message' => $request->pullSession('favoritos.message', null),
         ]);
     }

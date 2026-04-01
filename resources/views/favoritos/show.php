@@ -11,6 +11,7 @@ $recomendacao = isset($recomendacao) && is_array($recomendacao) ? $recomendacao 
 $statusPermitidos = isset($statusPermitidos) && is_array($statusPermitidos) ? $statusPermitidos : [];
 $statusTarefaPermitidos = isset($statusTarefaPermitidos) && is_array($statusTarefaPermitidos) ? $statusTarefaPermitidos : [];
 $usuariosResponsaveis = isset($usuariosResponsaveis) && is_array($usuariosResponsaveis) ? $usuariosResponsaveis : [];
+$proposta = isset($proposta) ? $proposta : null;
 $message = isset($message) ? (string) $message : null;
 
 if ($favorito === null) {
@@ -83,6 +84,7 @@ $badgeTarefaClass = static function (?string $status): string {
             <div class="actions">
                 <a class="btn" href="/favoritos">Voltar ao pipeline</a>
                 <a class="btn" href="/oportunidades">Oportunidades</a>
+                <a class="btn" href="/propostas">Propostas</a>
                 <?php if (($favorito->correspondenciaId ?? null) !== null && (int) $favorito->correspondenciaId > 0): ?>
                     <a class="btn" href="/oportunidades/<?= (int) $favorito->correspondenciaId ?>">Oportunidade origem</a>
                 <?php endif; ?>
@@ -133,6 +135,31 @@ $badgeTarefaClass = static function (?string $status): string {
             <p><strong><?= htmlspecialchars((string) ($recomendacao['nivel'] ?? '-'), ENT_QUOTES, 'UTF-8') ?></strong></p>
             <p><?= htmlspecialchars((string) ($recomendacao['descricao'] ?? '-'), ENT_QUOTES, 'UTF-8') ?></p>
             <p class="muted">Status sugerido: <?= htmlspecialchars((string) ($recomendacao['status_sugerido'] ?? '-'), ENT_QUOTES, 'UTF-8') ?></p>
+        </section>
+
+        <section class="panel">
+            <h3>Assistente de Proposta</h3>
+            <?php if ($proposta !== null): ?>
+                <p>
+                    Rascunho existente:
+                    <strong><?= htmlspecialchars((string) ($proposta->titulo ?? 'Proposta'), ENT_QUOTES, 'UTF-8') ?></strong>
+                    (status: <?= htmlspecialchars((string) ($proposta->status ?? 'RASCUNHO'), ENT_QUOTES, 'UTF-8') ?>)
+                </p>
+            <?php else: ?>
+                <p>Nenhuma proposta gerada para este item ainda.</p>
+            <?php endif; ?>
+            <div class="actions">
+                <form method="POST" action="/favoritos/<?= (int) $favorito->id ?>/proposta/gerar">
+                    <input type="hidden" name="redirect_to" value="/favoritos/<?= (int) $favorito->id ?>">
+                    <input type="hidden" name="abrir_detalhe" value="1">
+                    <button class="btn btn-primary" type="submit">
+                        <?= $proposta !== null ? 'Regenerar rascunho' : 'Gerar rascunho automatico' ?>
+                    </button>
+                </form>
+                <?php if ($proposta !== null): ?>
+                    <a class="btn" href="/propostas/<?= (int) $proposta->id ?>">Abrir proposta</a>
+                <?php endif; ?>
+            </div>
         </section>
 
         <section class="panel">

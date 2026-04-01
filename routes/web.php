@@ -129,6 +129,11 @@ $router->get('/favoritos', 'FavoritoController@index', [
     TenantMiddleware::class,
     AssinaturaMiddleware::class,
 ]);
+$router->post('/favoritos/{id}/proposta/gerar', 'PropostaController@gerarPorFavorito', [
+    AuthMiddleware::class,
+    TenantMiddleware::class,
+    AssinaturaMiddleware::class,
+]);
 $router->get('/favoritos/relatorio/conversao', 'FavoritoController@relatorioConversao', [
     AuthMiddleware::class,
     TenantMiddleware::class,
@@ -155,6 +160,22 @@ $router->post('/favoritos/{id}/tarefas/{tarefaId}/status', 'FavoritoController@u
     AssinaturaMiddleware::class,
 ]);
 $router->post('/favoritos/{id}/tarefas/{tarefaId}/delete', 'FavoritoController@deleteTarefa', [
+    AuthMiddleware::class,
+    TenantMiddleware::class,
+    AssinaturaMiddleware::class,
+]);
+
+$router->get('/propostas', 'PropostaController@index', [
+    AuthMiddleware::class,
+    TenantMiddleware::class,
+    AssinaturaMiddleware::class,
+]);
+$router->get('/propostas/{id}', 'PropostaController@show', [
+    AuthMiddleware::class,
+    TenantMiddleware::class,
+    AssinaturaMiddleware::class,
+]);
+$router->post('/propostas/{id}', 'PropostaController@update', [
     AuthMiddleware::class,
     TenantMiddleware::class,
     AssinaturaMiddleware::class,
