@@ -23,6 +23,15 @@ $orquestradorAtivo = ((int) ($orquestrador['ativo'] ?? 0)) === 1;
 $orquestradorResumo = isset($orquestrador['resumo']) && is_array($orquestrador['resumo'])
     ? $orquestrador['resumo']
     : [];
+$orquestradorExecutivo = isset($orquestrador['executivo']) && is_array($orquestrador['executivo'])
+    ? $orquestrador['executivo']
+    : [];
+$orquestradorExecutivoResumo = isset($orquestradorExecutivo['resumo']) && is_array($orquestradorExecutivo['resumo'])
+    ? $orquestradorExecutivo['resumo']
+    : [];
+$orquestradorExecutivoNivel = isset($orquestradorExecutivo['por_nivel']) && is_array($orquestradorExecutivo['por_nivel'])
+    ? $orquestradorExecutivo['por_nivel']
+    : [];
 $orquestradorEscalonados = isset($orquestrador['escalonados']) && is_array($orquestrador['escalonados'])
     ? $orquestrador['escalonados']
     : [];
@@ -266,6 +275,32 @@ $isAdmin = in_array(strtoupper($perfilRaw), ['SUPER_ADMIN', 'ADMIN'], true);
                     | Sem progresso: <strong><?= (int) ($orquestradorResumo['sem_progresso'] ?? 0) ?></strong>
                     | Escalados: <strong><?= (int) ($orquestradorResumo['escalados'] ?? 0) ?></strong>
                 </p>
+
+                <h4>Indicadores executivos</h4>
+                <p>
+                    Total historico: <strong><?= (int) ($orquestradorExecutivoResumo['total_playbooks'] ?? 0) ?></strong>
+                    | Encerrados no SLA: <strong><?= (int) ($orquestradorExecutivoResumo['encerrados_no_prazo'] ?? 0) ?>/<?= (int) ($orquestradorExecutivoResumo['encerrados_total'] ?? 0) ?></strong>
+                    | Taxa SLA: <strong><?= number_format((float) ($orquestradorExecutivoResumo['taxa_sla_percentual'] ?? 0), 1, ',', '.') ?>%</strong>
+                    | Taxa escalonamento: <strong><?= number_format((float) ($orquestradorExecutivoResumo['taxa_escalonamento_percentual'] ?? 0), 1, ',', '.') ?>%</strong>
+                </p>
+                <p>
+                    Tempo medio 1a acao: <strong><?= number_format((float) ($orquestradorExecutivoResumo['tempo_medio_primeira_atividade_horas'] ?? 0), 2, ',', '.') ?>h</strong>
+                    | Tempo medio encerramento: <strong><?= number_format((float) ($orquestradorExecutivoResumo['tempo_medio_encerramento_horas'] ?? 0), 2, ',', '.') ?>h</strong>
+                </p>
+
+                <h4>Escalonamento por nivel</h4>
+                <?php if ($orquestradorExecutivoNivel === []): ?>
+                    <p class="muted">Sem historico de escalonamento por nivel.</p>
+                <?php else: ?>
+                    <ul>
+                        <?php foreach ($orquestradorExecutivoNivel as $nivel): ?>
+                            <li>
+                                Nivel L<?= (int) ($nivel['nivel'] ?? 0) ?>:
+                                <strong><?= (int) ($nivel['total'] ?? 0) ?></strong> caso(s)
+                            </li>
+                        <?php endforeach; ?>
+                    </ul>
+                <?php endif; ?>
 
                 <h4>Escalonamentos em aberto</h4>
                 <?php if ($orquestradorEscalonados === []): ?>

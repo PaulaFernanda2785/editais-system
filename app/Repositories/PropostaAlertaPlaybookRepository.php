@@ -511,6 +511,107 @@ class PropostaAlertaPlaybookRepository
     }
 
     /**
+     * @return array<string, int|float>
+     */
+    public function resumoExecutivoDashboard(int $empresaId): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT
+                COUNT(*) AS total_playbooks,
+                SUM(CASE WHEN status = \'ENCERRADO\' THEN 1 ELSE 0 END) AS encerrados_total,
+                SUM(CASE
+                    WHEN status = \'ENCERRADO\'
+                        AND encerrado_em IS NOT NULL
+                        AND prazo_sla_em IS NOT NULL
+                        AND encerrado_em <= prazo_sla_em
+                        THEN 1
+                    ELSE 0
+                END) AS encerrados_no_prazo,
+                SUM(CASE WHEN escalonamento_nivel > 0 THEN 1 ELSE 0 END) AS com_escalonamento,
+                AVG(CASE
+                    WHEN primeira_atividade_em IS NOT NULL
+                        THEN TIMESTAMPDIFF(MINUTE, criado_em, primeira_atividade_em)
+                    ELSE NULL
+                END) AS media_minutos_primeira_atividade,
+                AVG(CASE
+                    WHEN encerrado_em IS NOT NULL
+                        THEN TIMESTAMPDIFF(MINUTE, criado_em, encerrado_em)
+                    ELSE NULL
+                END) AS media_minutos_encerramento
+            FROM proposta_alerta_playbooks
+            WHERE empresa_id = :empresa_id'
+        );
+        $stmt->execute(['empresa_id' => $empresaId]);
+        $row = $stmt->fetch();
+
+        $totalPlaybooks = (int) ($row['total_playbooks'] ?? 0);
+        $encerradosTotal = (int) ($row['encerrados_total'] ?? 0);
+        $encerradosNoPrazo = (int) ($row['encerrados_no_prazo'] ?? 0);
+        $comEscalonamento = (int) ($row['com_escalonamento'] ?? 0);
+        $mediaMinPrimeiraAtividade = isset($row['media_minutos_primeira_atividade'])
+            ? (float) $row['media_minutos_primeira_atividade']
+            : 0.0;
+        $mediaMinEncerramento = isset($row['media_minutos_encerramento'])
+            ? (float) $row['media_minutos_encerramento']
+            : 0.0;
+
+        $taxaSla = $encerradosTotal > 0
+            ? round(($encerradosNoPrazo / $encerradosTotal) * 100, 2)
+            : 0.0;
+        $taxaEscalonamento = $totalPlaybooks > 0
+            ? round(($comEscalonamento / $totalPlaybooks) * 100, 2)
+            : 0.0;
+
+        return [
+            'total_playbooks' => $totalPlaybooks,
+            'encerrados_total' => $encerradosTotal,
+            'encerrados_no_prazo' => $encerradosNoPrazo,
+            'com_escalonamento' => $comEscalonamento,
+            'taxa_sla_percentual' => $taxaSla,
+            'taxa_escalonamento_percentual' => $taxaEscalonamento,
+            'tempo_medio_primeira_atividade_horas' => round($mediaMinPrimeiraAtividade / 60, 2),
+            'tempo_medio_encerramento_horas' => round($mediaMinEncerramento / 60, 2),
+        ];
+    }
+
+    /**
+     * @return array<int, array{nivel: int, total: int}>
+     */
+    public function listarEscalonamentoPorNivelDashboard(int $empresaId): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT
+                escalonamento_nivel AS nivel,
+                COUNT(*) AS total
+            FROM proposta_alerta_playbooks
+            WHERE empresa_id = :empresa_id
+              AND escalonamento_nivel > 0
+            GROUP BY escalonamento_nivel
+            ORDER BY escalonamento_nivel ASC'
+        );
+        $stmt->execute(['empresa_id' => $empresaId]);
+
+        $rows = $stmt->fetchAll();
+        if (!is_array($rows)) {
+            return [];
+        }
+
+        $resultado = [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $resultado[] = [
+                'nivel' => (int) ($row['nivel'] ?? 0),
+                'total' => (int) ($row['total'] ?? 0),
+            ];
+        }
+
+        return $resultado;
+    }
+
+    /**
      * @return array<int, array<string, mixed>>
      */
     public function listarEscalonadosDashboard(int $empresaId, int $limit = 5): array

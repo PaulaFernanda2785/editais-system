@@ -108,6 +108,19 @@ class PropostaAlertaOrquestradorService
                     'sem_progresso' => 0,
                     'escalados' => 0,
                 ],
+                'executivo' => [
+                    'resumo' => [
+                        'total_playbooks' => 0,
+                        'encerrados_total' => 0,
+                        'encerrados_no_prazo' => 0,
+                        'com_escalonamento' => 0,
+                        'taxa_sla_percentual' => 0.0,
+                        'taxa_escalonamento_percentual' => 0.0,
+                        'tempo_medio_primeira_atividade_horas' => 0.0,
+                        'tempo_medio_encerramento_horas' => 0.0,
+                    ],
+                    'por_nivel' => [],
+                ],
                 'escalonados' => [],
                 'aprendizado' => [],
                 'evidencias' => [],
@@ -120,6 +133,10 @@ class PropostaAlertaOrquestradorService
         return [
             'ativo' => true,
             'resumo' => $this->playbookRepository->resumoOperacionalDashboard($empresaId),
+            'executivo' => [
+                'resumo' => $this->playbookRepository->resumoExecutivoDashboard($empresaId),
+                'por_nivel' => $this->playbookRepository->listarEscalonamentoPorNivelDashboard($empresaId),
+            ],
             'escalonados' => $this->playbookRepository->listarEscalonadosDashboard($empresaId, $limitEscalonados),
             'aprendizado' => $this->playbookRepository->listarAprendizadoDashboard($empresaId),
             'evidencias' => $this->playbookRepository->listarEventosRecentesDashboard($empresaId, $limitEvidencias),
