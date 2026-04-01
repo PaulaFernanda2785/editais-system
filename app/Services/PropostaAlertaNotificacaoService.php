@@ -13,6 +13,7 @@ class PropostaAlertaNotificacaoService
 {
     private PropostaExecucaoService $propostaService;
     private PropostaAlertaNotificacaoRepository $notificacaoRepository;
+    private PropostaAlertaOrquestradorService $orquestradorService;
     private EmpresaRepository $empresaRepository;
     private UsuarioRepository $usuarioRepository;
     private LogService $logService;
@@ -21,6 +22,7 @@ class PropostaAlertaNotificacaoService
     public function __construct(
         ?PropostaExecucaoService $propostaService = null,
         ?PropostaAlertaNotificacaoRepository $notificacaoRepository = null,
+        ?PropostaAlertaOrquestradorService $orquestradorService = null,
         ?EmpresaRepository $empresaRepository = null,
         ?UsuarioRepository $usuarioRepository = null,
         ?LogService $logService = null,
@@ -28,6 +30,7 @@ class PropostaAlertaNotificacaoService
     ) {
         $this->propostaService = $propostaService ?? new PropostaExecucaoService();
         $this->notificacaoRepository = $notificacaoRepository ?? new PropostaAlertaNotificacaoRepository();
+        $this->orquestradorService = $orquestradorService ?? new PropostaAlertaOrquestradorService();
         $this->empresaRepository = $empresaRepository ?? new EmpresaRepository();
         $this->usuarioRepository = $usuarioRepository ?? new UsuarioRepository();
         $this->logService = $logService ?? new LogService();
@@ -128,6 +131,26 @@ class PropostaAlertaNotificacaoService
             }
         }
 
+        $orquestrador = [
+            'playbooks_criados' => 0,
+            'playbooks_reabertos' => 0,
+            'playbooks_escalonados' => 0,
+            'playbooks_encerrados' => 0,
+            'aprendizado' => [
+                'wins' => 0,
+                'losses' => 0,
+                'neutros' => 0,
+            ],
+        ];
+        try {
+            $orquestrador = $this->orquestradorService->processarCiclo($empresaId, $novos, $enviarEmail);
+        } catch (Throwable $exception) {
+            $this->logService->warning('propostas.playbook.processar', 'Falha ao processar orquestrador automatico.', [
+                'empresa_id' => $empresaId,
+                'exception' => $exception->getMessage(),
+            ]);
+        }
+
         $this->logService->info('propostas.alertas.processar', 'Processamento de alertas de propostas executado.', [
             'empresa_id' => $empresaId,
             'novos' => count($novos),
@@ -135,6 +158,10 @@ class PropostaAlertaNotificacaoService
             'resolvidos_julgamento_parado' => $resolvidosJulgamentoParado,
             'emails_enviados' => $emailsEnviados,
             'emails_falhos' => $emailsFalhos,
+            'playbooks_criados' => (int) ($orquestrador['playbooks_criados'] ?? 0),
+            'playbooks_reabertos' => (int) ($orquestrador['playbooks_reabertos'] ?? 0),
+            'playbooks_escalonados' => (int) ($orquestrador['playbooks_escalonados'] ?? 0),
+            'playbooks_encerrados' => (int) ($orquestrador['playbooks_encerrados'] ?? 0),
         ]);
 
         return [
@@ -143,6 +170,7 @@ class PropostaAlertaNotificacaoService
             'resolvidos' => $resolvidosSemResultado + $resolvidosJulgamentoParado,
             'emails_enviados' => $emailsEnviados,
             'emails_falhos' => $emailsFalhos,
+            'orquestrador' => $orquestrador,
             'totais_alerta' => $alertas['totais'] ?? [],
         ];
     }
@@ -159,11 +187,30 @@ class PropostaAlertaNotificacaoService
         $items = $this->notificacaoRepository->listAtivosDashboard($empresaId, $limit);
         $novos = $this->notificacaoRepository->countAtivosNovos($empresaId);
         $totalAtivos = $this->notificacaoRepository->countAtivos($empresaId);
+        $orquestrador = [
+            'ativo' => false,
+            'resumo' => [
+                'ativos' => 0,
+                'sem_progresso' => 0,
+                'escalados' => 0,
+            ],
+            'escalonados' => [],
+            'aprendizado' => [],
+        ];
+        try {
+            $orquestrador = $this->orquestradorService->obterParaDashboard($empresaId, max(3, min(8, $limit)));
+        } catch (Throwable $exception) {
+            $this->logService->warning('propostas.playbook.dashboard', 'Falha ao carregar resumo do orquestrador.', [
+                'empresa_id' => $empresaId,
+                'exception' => $exception->getMessage(),
+            ]);
+        }
 
         return [
             'items' => $items,
             'novos' => $novos,
             'total_ativos' => $totalAtivos,
+            'orquestrador' => $orquestrador,
         ];
     }
 

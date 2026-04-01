@@ -16,6 +16,19 @@ $alertasItems = isset($notificacoesPropostas['items']) && is_array($notificacoes
     : [];
 $alertasAtivosTotal = (int) ($notificacoesPropostas['total_ativos'] ?? count($alertasItems));
 $alertasNovos = (int) ($notificacoesPropostas['novos'] ?? 0);
+$orquestrador = isset($notificacoesPropostas['orquestrador']) && is_array($notificacoesPropostas['orquestrador'])
+    ? $notificacoesPropostas['orquestrador']
+    : [];
+$orquestradorAtivo = ((int) ($orquestrador['ativo'] ?? 0)) === 1;
+$orquestradorResumo = isset($orquestrador['resumo']) && is_array($orquestrador['resumo'])
+    ? $orquestrador['resumo']
+    : [];
+$orquestradorEscalonados = isset($orquestrador['escalonados']) && is_array($orquestrador['escalonados'])
+    ? $orquestrador['escalonados']
+    : [];
+$orquestradorAprendizado = isset($orquestrador['aprendizado']) && is_array($orquestrador['aprendizado'])
+    ? $orquestrador['aprendizado']
+    : [];
 
 $nome = htmlspecialchars((string) ($auth['nome'] ?? 'Usuario'), ENT_QUOTES, 'UTF-8');
 $email = htmlspecialchars((string) ($auth['email'] ?? '-'), ENT_QUOTES, 'UTF-8');
@@ -49,6 +62,13 @@ $isAdmin = in_array(strtoupper($perfilRaw), ['SUPER_ADMIN', 'ADMIN'], true);
         .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; }
         .badge-new { background: #fee2e2; color: #991b1b; }
         .badge-type { background: #dbeafe; color: #1d4ed8; }
+        .badge-escalado { background: #fecaca; color: #7f1d1d; }
+        .badge-prio-alta { background: #fee2e2; color: #7f1d1d; }
+        .badge-prio-media { background: #fef3c7; color: #92400e; }
+        .badge-prio-baixa { background: #dcfce7; color: #166534; }
+        .table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+        .table th, .table td { border: 1px solid #dfe6f0; padding: 6px; text-align: left; }
+        .muted { color: #58657a; }
         ul { margin: 8px 0 0 18px; padding: 0; }
     </style>
 </head>
@@ -229,6 +249,88 @@ $isAdmin = in_array(strtoupper($perfilRaw), ['SUPER_ADMIN', 'ADMIN'], true);
                     <p style="margin-top: 8px;">
                         Exibindo os <?= count($alertasItems) ?> alertas mais recentes de um total de <?= $alertasAtivosTotal ?>.
                     </p>
+                <?php endif; ?>
+            <?php endif; ?>
+        </section>
+
+        <section class="card" style="margin-top: 10px;">
+            <h3>Orquestrador automatico</h3>
+            <?php if (!$orquestradorAtivo): ?>
+                <p class="muted">Orquestrador automatico desativado no ambiente.</p>
+            <?php else: ?>
+                <p>
+                    Playbooks ativos: <strong><?= (int) ($orquestradorResumo['ativos'] ?? 0) ?></strong>
+                    | Sem progresso: <strong><?= (int) ($orquestradorResumo['sem_progresso'] ?? 0) ?></strong>
+                    | Escalados: <strong><?= (int) ($orquestradorResumo['escalados'] ?? 0) ?></strong>
+                </p>
+
+                <h4>Escalonamentos em aberto</h4>
+                <?php if ($orquestradorEscalonados === []): ?>
+                    <p class="muted">Nenhum playbook escalado no momento.</p>
+                <?php else: ?>
+                    <ul>
+                        <?php foreach ($orquestradorEscalonados as $item): ?>
+                            <?php
+                                $tipo = (string) ($item['tipo_alerta'] ?? '');
+                                $tipoLabel = $tipo === 'JULGAMENTO_PARADO' ? 'Julgamento parado' : 'Sem resultado';
+                                $prioridade = strtoupper((string) ($item['prioridade'] ?? 'MEDIA'));
+                                $prioridadeClass = $prioridade === 'ALTA'
+                                    ? 'badge-prio-alta'
+                                    : ($prioridade === 'BAIXA' ? 'badge-prio-baixa' : 'badge-prio-media');
+                                $progresso = (float) ($item['progresso_percentual'] ?? 0);
+                            ?>
+                            <li>
+                                <span class="badge badge-escalado">ESCALADO</span>
+                                <span class="badge badge-type"><?= htmlspecialchars($tipoLabel, ENT_QUOTES, 'UTF-8') ?></span>
+                                <span class="badge <?= $prioridadeClass ?>">Prioridade <?= htmlspecialchars($prioridade, ENT_QUOTES, 'UTF-8') ?></span>
+                                <a href="/propostas/<?= (int) ($item['proposta_id'] ?? 0) ?>">
+                                    Proposta #<?= (int) ($item['proposta_id'] ?? 0) ?>
+                                </a>
+                                - <?= htmlspecialchars((string) ($item['orgao_nome'] ?? '-'), ENT_QUOTES, 'UTF-8') ?>
+                                - progresso <?= number_format($progresso, 1, ',', '.') ?>%
+                                - responsavel <?= htmlspecialchars((string) ($item['responsavel_nome'] ?? '-'), ENT_QUOTES, 'UTF-8') ?>
+                                - SLA <?= htmlspecialchars((string) ($item['prazo_sla_em'] ?? '-'), ENT_QUOTES, 'UTF-8') ?>
+                            </li>
+                        <?php endforeach; ?>
+                    </ul>
+                <?php endif; ?>
+
+                <h4>Aprendizado win/loss por tipo de alerta</h4>
+                <?php if ($orquestradorAprendizado === []): ?>
+                    <p class="muted">Sem historico suficiente para ajustar priorizacao.</p>
+                <?php else: ?>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Tipo</th>
+                                <th>Casos</th>
+                                <th>Wins</th>
+                                <th>Losses</th>
+                                <th>Neutros</th>
+                                <th>Win rate</th>
+                                <th>Prioridade sugerida</th>
+                                <th>Fator</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($orquestradorAprendizado as $row): ?>
+                                <?php
+                                    $tipo = (string) ($row['tipo_alerta'] ?? '');
+                                    $tipoLabel = $tipo === 'JULGAMENTO_PARADO' ? 'JULGAMENTO_PARADO' : 'SEM_RESULTADO';
+                                ?>
+                                <tr>
+                                    <td><?= htmlspecialchars($tipoLabel, ENT_QUOTES, 'UTF-8') ?></td>
+                                    <td><?= (int) ($row['total_casos'] ?? 0) ?></td>
+                                    <td><?= (int) ($row['wins'] ?? 0) ?></td>
+                                    <td><?= (int) ($row['losses'] ?? 0) ?></td>
+                                    <td><?= (int) ($row['neutros'] ?? 0) ?></td>
+                                    <td><?= number_format((float) ($row['win_rate'] ?? 0), 1, ',', '.') ?>%</td>
+                                    <td><?= htmlspecialchars((string) ($row['prioridade_sugerida'] ?? 'MEDIA'), ENT_QUOTES, 'UTF-8') ?></td>
+                                    <td><?= number_format((float) ($row['fator_priorizacao'] ?? 1), 2, ',', '.') ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
                 <?php endif; ?>
             <?php endif; ?>
         </section>
