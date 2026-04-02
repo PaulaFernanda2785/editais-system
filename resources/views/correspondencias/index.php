@@ -15,6 +15,27 @@ $filters = isset($filters) && is_array($filters) ? $filters : [];
 $perfis = isset($perfis) && is_array($perfis) ? $perfis : [];
 $message = isset($message) ? (string) $message : null;
 
+if (isset($_GET['modo'])) {
+    $modoEntrada = strtolower(trim((string) $_GET['modo']));
+    if (in_array($modoEntrada, ['iniciante', 'normal'], true)) {
+        $_SESSION['ui_modo'] = $modoEntrada;
+    }
+}
+$modoIniciante = strtolower((string) ($_SESSION['ui_modo'] ?? 'normal')) === 'iniciante';
+$appendModo = static function (string $url) use ($modoIniciante): string {
+    if (!$modoIniciante) {
+        return $url;
+    }
+
+    return $url . (str_contains($url, '?') ? '&' : '?') . 'modo=iniciante';
+};
+$pathAtual = strtok((string) ($_SERVER['REQUEST_URI'] ?? '/oportunidades'), '?');
+if (!is_string($pathAtual) || trim($pathAtual) === '') {
+    $pathAtual = '/oportunidades';
+}
+$toggleModoUrl = $pathAtual . '?modo=' . ($modoIniciante ? 'normal' : 'iniciante');
+$toggleModoLabel = $modoIniciante ? 'Modo normal' : 'Modo iniciante';
+
 $usuarioNome = htmlspecialchars((string) ($auth['nome'] ?? 'Usuario'), ENT_QUOTES, 'UTF-8');
 $empresaNome = htmlspecialchars((string) ($tenant['nome_fantasia'] ?? $tenant['razao_social'] ?? 'Empresa'), ENT_QUOTES, 'UTF-8');
 
@@ -26,9 +47,12 @@ $queryBase = [
     'per_page' => $perPage,
 ];
 
-$buildPageUrl = static function (int $targetPage, array $base): string {
+$buildPageUrl = static function (int $targetPage, array $base) use ($modoIniciante): string {
     $params = $base;
     $params['page'] = $targetPage;
+    if ($modoIniciante) {
+        $params['modo'] = 'iniciante';
+    }
     return '/oportunidades?' . http_build_query($params);
 };
 
@@ -51,6 +75,33 @@ $pipelineBadgeClass = static function (?string $status): string {
         default => 'badge-pipeline-nao-definido',
     };
 };
+
+$fluxoTemFavorito = false;
+foreach ($items as $itemFluxo) {
+    if ((int) ($itemFluxo->favoritoId ?? 0) > 0) {
+        $fluxoTemFavorito = true;
+        break;
+    }
+}
+
+$fluxoEtapaAtual = $total > 0 ? 2 : 1;
+if ($fluxoTemFavorito) {
+    $fluxoEtapaAtual = 3;
+}
+
+$fluxoProximaDescricao = 'Clique em "Processar agora" para gerar oportunidades com base nos perfis.';
+$fluxoProximaLink = '/oportunidades';
+$fluxoProximaAcao = 'Ir';
+if ($fluxoEtapaAtual === 2) {
+    $fluxoProximaDescricao = 'Classifique no pipeline.';
+    $fluxoProximaLink = '/oportunidades';
+    $fluxoProximaAcao = 'Ir';
+} elseif ($fluxoEtapaAtual === 3) {
+    $fluxoProximaDescricao = 'Gere a proposta no pipeline.';
+    $fluxoProximaLink = '/favoritos';
+    $fluxoProximaAcao = 'Ir';
+}
+$wizardNextLink = $appendModo($fluxoProximaLink);
 ?>
 <!doctype html>
 <html lang="pt-BR">
@@ -91,6 +142,20 @@ $pipelineBadgeClass = static function (?string $status): string {
         .quick-decision { margin-top: 8px; display: grid; grid-template-columns: 1fr auto; gap: 6px; }
         .quick-decision select { min-width: 130px; }
         .quick-decision button { white-space: nowrap; }
+        .wizard-next {
+            position: fixed;
+            right: 18px;
+            bottom: 18px;
+            z-index: 99;
+            border: 1px solid #00509d;
+            background: #00509d;
+            color: #fff;
+            text-decoration: none;
+            padding: 10px 14px;
+            border-radius: 999px;
+            font-weight: 700;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16);
+        }
     </style>
 </head>
 <body>
@@ -101,11 +166,12 @@ $pipelineBadgeClass = static function (?string $status): string {
                 <p>Empresa: <strong><?= $empresaNome ?></strong> | Usuario: <strong><?= $usuarioNome ?></strong></p>
             </div>
             <div class="actions">
-                <a class="btn" href="/dashboard">Dashboard</a>
-                <a class="btn" href="/editais">Catalogo de editais</a>
-                <a class="btn" href="/monitoramento">Perfis</a>
-                <a class="btn" href="/favoritos">Pipeline</a>
-                <a class="btn" href="/propostas">Propostas</a>
+                <a class="btn" href="<?= htmlspecialchars($appendModo('/dashboard'), ENT_QUOTES, 'UTF-8') ?>">Dashboard</a>
+                <a class="btn" href="<?= htmlspecialchars($appendModo('/editais'), ENT_QUOTES, 'UTF-8') ?>">Catalogo de editais</a>
+                <a class="btn" href="<?= htmlspecialchars($appendModo('/monitoramento'), ENT_QUOTES, 'UTF-8') ?>">Perfis</a>
+                <a class="btn" href="<?= htmlspecialchars($appendModo('/favoritos'), ENT_QUOTES, 'UTF-8') ?>">Pipeline</a>
+                <a class="btn" href="<?= htmlspecialchars($appendModo('/propostas'), ENT_QUOTES, 'UTF-8') ?>">Propostas</a>
+                <a class="btn" href="<?= htmlspecialchars($toggleModoUrl, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($toggleModoLabel, ENT_QUOTES, 'UTF-8') ?></a>
                 <a class="btn" href="/logout">Sair</a>
             </div>
         </header>
@@ -113,6 +179,19 @@ $pipelineBadgeClass = static function (?string $status): string {
         <?php if ($message !== null && $message !== ''): ?>
             <div class="msg"><?= htmlspecialchars($message, ENT_QUOTES, 'UTF-8') ?></div>
         <?php endif; ?>
+
+        <section class="panel">
+            <h3>Fluxo</h3>
+            <p>
+                Etapa atual: <strong><?= $fluxoEtapaAtual ?>/3</strong>
+                | 1 Oportunidades -> 2 Pipeline -> 3 Proposta
+            </p>
+            <p>
+                <strong>Proximo passo:</strong>
+                <?= htmlspecialchars($fluxoProximaDescricao, ENT_QUOTES, 'UTF-8') ?>
+                <a class="btn" href="<?= htmlspecialchars($wizardNextLink, ENT_QUOTES, 'UTF-8') ?>" style="margin-left: 6px;"><?= htmlspecialchars($fluxoProximaAcao, ENT_QUOTES, 'UTF-8') ?></a>
+            </p>
+        </section>
 
         <section class="panel">
             <h3>Atualizar correspondencias</h3>
@@ -123,6 +202,7 @@ $pipelineBadgeClass = static function (?string $status): string {
             </form>
         </section>
 
+        <?php if (!$modoIniciante): ?>
         <section class="panel">
             <form method="GET" action="/oportunidades">
                 <div class="grid">
@@ -181,6 +261,7 @@ $pipelineBadgeClass = static function (?string $status): string {
                 </div>
             </form>
         </section>
+        <?php endif; ?>
 
         <section class="panel">
             <h3>Resultados</h3>
@@ -252,11 +333,11 @@ $pipelineBadgeClass = static function (?string $status): string {
                                 </form>
                                 <?php if (($item->favoritoId ?? null) !== null && (int) $item->favoritoId > 0): ?>
                                     <div style="margin-top: 6px;">
-                                        <a class="btn" href="/favoritos/<?= (int) $item->favoritoId ?>">Abrir</a>
+                                        <a class="btn" href="<?= htmlspecialchars($appendModo('/favoritos/' . (int) $item->favoritoId), ENT_QUOTES, 'UTF-8') ?>">Abrir</a>
                                     </div>
                                 <?php endif; ?>
                             </td>
-                            <td><a class="btn" href="/oportunidades/<?= (int) $item->id ?>">Detalhes</a></td>
+                            <td><a class="btn" href="<?= htmlspecialchars($appendModo('/oportunidades/' . (int) $item->id), ENT_QUOTES, 'UTF-8') ?>">Detalhes</a></td>
                         </tr>
                     <?php endforeach; ?>
                     </tbody>
@@ -286,6 +367,7 @@ $pipelineBadgeClass = static function (?string $status): string {
             </div>
         </section>
     </div>
+    <a class="wizard-next" href="<?= htmlspecialchars($wizardNextLink, ENT_QUOTES, 'UTF-8') ?>">Proxima etapa</a>
 </body>
 </html>
 

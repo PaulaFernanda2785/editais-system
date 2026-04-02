@@ -302,10 +302,19 @@ class PropostaAlertaNotificacaoRepository
                 GROUP BY proposta_id
             ) ls ON ls.proposta_id = pan.proposta_id
             LEFT JOIN (
-                SELECT proposta_id, MAX(data_resultado) AS ultima_data_resultado
-                FROM proposta_resultados
-                WHERE empresa_id = :empresa_id_resultados
-                GROUP BY proposta_id
+                SELECT
+                    pr1.proposta_id,
+                    pr1.data_resultado AS ultima_data_resultado
+                FROM proposta_resultados pr1
+                INNER JOIN (
+                    SELECT
+                        proposta_id,
+                        MAX(id) AS max_id
+                    FROM proposta_resultados
+                    WHERE empresa_id = :empresa_id_resultados
+                    GROUP BY proposta_id
+                ) latest ON latest.max_id = pr1.id
+                WHERE pr1.empresa_id = :empresa_id_resultados_rows
             ) lr ON lr.proposta_id = pan.proposta_id
             WHERE pan.empresa_id = :empresa_id
               AND pan.ativo = 1
@@ -314,6 +323,7 @@ class PropostaAlertaNotificacaoRepository
         );
         $stmt->bindValue(':empresa_id_submissoes', $empresaId, PDO::PARAM_INT);
         $stmt->bindValue(':empresa_id_resultados', $empresaId, PDO::PARAM_INT);
+        $stmt->bindValue(':empresa_id_resultados_rows', $empresaId, PDO::PARAM_INT);
         $stmt->bindValue(':empresa_id', $empresaId, PDO::PARAM_INT);
         $stmt->bindValue(':limite', $limit, PDO::PARAM_INT);
         $stmt->execute();

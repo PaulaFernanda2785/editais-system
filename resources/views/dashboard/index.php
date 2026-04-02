@@ -11,6 +11,27 @@ $notificacoesPropostas = isset($notificacoesPropostas) && is_array($notificacoes
 $alertasMessage = isset($alertasMessage) ? (string) $alertasMessage : null;
 $adminMessage = isset($adminMessage) ? (string) $adminMessage : null;
 
+if (isset($_GET['modo'])) {
+    $modoEntrada = strtolower(trim((string) $_GET['modo']));
+    if (in_array($modoEntrada, ['iniciante', 'normal'], true)) {
+        $_SESSION['ui_modo'] = $modoEntrada;
+    }
+}
+$modoIniciante = strtolower((string) ($_SESSION['ui_modo'] ?? 'normal')) === 'iniciante';
+$appendModo = static function (string $url) use ($modoIniciante): string {
+    if (!$modoIniciante) {
+        return $url;
+    }
+
+    return $url . (str_contains($url, '?') ? '&' : '?') . 'modo=iniciante';
+};
+$pathAtual = strtok((string) ($_SERVER['REQUEST_URI'] ?? '/dashboard'), '?');
+if (!is_string($pathAtual) || trim($pathAtual) === '') {
+    $pathAtual = '/dashboard';
+}
+$toggleModoUrl = $pathAtual . '?modo=' . ($modoIniciante ? 'normal' : 'iniciante');
+$toggleModoLabel = $modoIniciante ? 'Modo normal' : 'Modo iniciante';
+
 $alertasItems = isset($notificacoesPropostas['items']) && is_array($notificacoesPropostas['items'])
     ? $notificacoesPropostas['items']
     : [];
@@ -44,6 +65,47 @@ $orquestradorTopContextos = isset($orquestrador['top_contextos_criticos']) && is
 $orquestradorEvidencias = isset($orquestrador['evidencias']) && is_array($orquestrador['evidencias'])
     ? $orquestrador['evidencias']
     : [];
+
+$guiaEtapa1 = (int) ($resumo['oportunidades_total'] ?? 0) > 0;
+$guiaEtapa2 = (int) ($resumo['pipeline_total'] ?? 0) > 0;
+$guiaEtapa3 = (int) ($resumo['propostas_total'] ?? 0) > 0;
+$guiaEtapa4 = (int) ($resumo['propostas_enviadas'] ?? 0) > 0;
+$guiaEtapa5 = $alertasAtivosTotal > 0
+    || (int) ($orquestradorResumo['ativos'] ?? 0) > 0
+    || (int) ($orquestradorExecutivoResumo['total_playbooks'] ?? 0) > 0;
+
+$guiaProximoTitulo = 'Concluido: fluxo principal validado.';
+$guiaProximoDescricao = 'Acompanhe alertas e aprendizado.';
+$guiaProximoLink = '/dashboard';
+$guiaProximoAcao = 'Atualizar';
+
+if (!$guiaEtapa1) {
+    $guiaProximoTitulo = 'Passo 1: gerar oportunidades';
+    $guiaProximoDescricao = 'Gere as oportunidades.';
+    $guiaProximoLink = '/oportunidades';
+    $guiaProximoAcao = 'Ir';
+} elseif (!$guiaEtapa2) {
+    $guiaProximoTitulo = 'Passo 2: classificar no pipeline';
+    $guiaProximoDescricao = 'Classifique no pipeline.';
+    $guiaProximoLink = '/oportunidades';
+    $guiaProximoAcao = 'Ir';
+} elseif (!$guiaEtapa3) {
+    $guiaProximoTitulo = 'Passo 3: gerar proposta';
+    $guiaProximoDescricao = 'Gere a proposta.';
+    $guiaProximoLink = '/favoritos';
+    $guiaProximoAcao = 'Ir';
+} elseif (!$guiaEtapa4) {
+    $guiaProximoTitulo = 'Passo 4: enviar proposta';
+    $guiaProximoDescricao = 'Envie a proposta.';
+    $guiaProximoLink = '/propostas';
+    $guiaProximoAcao = 'Ir';
+} elseif (!$guiaEtapa5) {
+    $guiaProximoTitulo = 'Passo 5: validar alertas e playbooks';
+    $guiaProximoDescricao = 'Valide alertas e playbooks.';
+    $guiaProximoLink = '/dashboard';
+    $guiaProximoAcao = 'Atualizar';
+}
+$wizardNextLink = $appendModo($guiaProximoLink);
 
 $nome = htmlspecialchars((string) ($auth['nome'] ?? 'Usuario'), ENT_QUOTES, 'UTF-8');
 $email = htmlspecialchars((string) ($auth['email'] ?? '-'), ENT_QUOTES, 'UTF-8');
@@ -84,6 +146,22 @@ $isAdmin = in_array(strtoupper($perfilRaw), ['SUPER_ADMIN', 'ADMIN'], true);
         .table { width: 100%; border-collapse: collapse; margin-top: 8px; }
         .table th, .table td { border: 1px solid #dfe6f0; padding: 6px; text-align: left; }
         .muted { color: #58657a; }
+        .guide-status-ok { color: #166534; font-weight: 700; }
+        .guide-status-pendente { color: #b45309; font-weight: 700; }
+        .wizard-next {
+            position: fixed;
+            right: 18px;
+            bottom: 18px;
+            z-index: 99;
+            border: 1px solid #00509d;
+            background: #00509d;
+            color: #fff;
+            text-decoration: none;
+            padding: 10px 14px;
+            border-radius: 999px;
+            font-weight: 700;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16);
+        }
         ul { margin: 8px 0 0 18px; padding: 0; }
     </style>
 </head>
@@ -95,17 +173,18 @@ $isAdmin = in_array(strtoupper($perfilRaw), ['SUPER_ADMIN', 'ADMIN'], true);
                 <p>Bem-vindo(a), <?= $nome ?>.</p>
             </div>
             <div class="actions">
-                <a class="btn" href="/editais">Catalogo de editais</a>
-                <a class="btn" href="/monitoramento">Perfis de monitoramento</a>
-                <a class="btn" href="/oportunidades">Oportunidades</a>
-                <a class="btn" href="/favoritos">Pipeline</a>
-                <a class="btn" href="/propostas">Propostas</a>
-                <a class="btn" href="/favoritos/relatorio/conversao">Relatorio de conversao</a>
+                <a class="btn" href="<?= htmlspecialchars($appendModo('/editais'), ENT_QUOTES, 'UTF-8') ?>">Catalogo de editais</a>
+                <a class="btn" href="<?= htmlspecialchars($appendModo('/monitoramento'), ENT_QUOTES, 'UTF-8') ?>">Perfis de monitoramento</a>
+                <a class="btn" href="<?= htmlspecialchars($appendModo('/oportunidades'), ENT_QUOTES, 'UTF-8') ?>">Oportunidades</a>
+                <a class="btn" href="<?= htmlspecialchars($appendModo('/favoritos'), ENT_QUOTES, 'UTF-8') ?>">Pipeline</a>
+                <a class="btn" href="<?= htmlspecialchars($appendModo('/propostas'), ENT_QUOTES, 'UTF-8') ?>">Propostas</a>
+                <a class="btn" href="<?= htmlspecialchars($appendModo('/favoritos/relatorio/conversao'), ENT_QUOTES, 'UTF-8') ?>">Relatorio de conversao</a>
                 <?php if ($isAdmin): ?>
-                    <a class="btn" href="/fontes">Fontes de coleta</a>
-                    <a class="btn" href="/admin/coletas">Coletas</a>
+                    <a class="btn" href="<?= htmlspecialchars($appendModo('/fontes'), ENT_QUOTES, 'UTF-8') ?>">Fontes de coleta</a>
+                    <a class="btn" href="<?= htmlspecialchars($appendModo('/admin/coletas'), ENT_QUOTES, 'UTF-8') ?>">Coletas</a>
                 <?php endif; ?>
-                <a class="btn" href="/assinatura/status">Status da assinatura</a>
+                <a class="btn" href="<?= htmlspecialchars($appendModo('/assinatura/status'), ENT_QUOTES, 'UTF-8') ?>">Status da assinatura</a>
+                <a class="btn" href="<?= htmlspecialchars($toggleModoUrl, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($toggleModoLabel, ENT_QUOTES, 'UTF-8') ?></a>
                 <a class="btn" href="/logout">Sair</a>
             </div>
         </header>
@@ -116,6 +195,22 @@ $isAdmin = in_array(strtoupper($perfilRaw), ['SUPER_ADMIN', 'ADMIN'], true);
         <?php if ($alertasMessage !== null && $alertasMessage !== ''): ?>
             <div class="msg"><?= htmlspecialchars($alertasMessage, ENT_QUOTES, 'UTF-8') ?></div>
         <?php endif; ?>
+
+        <section class="card" style="margin-bottom: 10px;">
+            <h3>Fluxo</h3>
+            <p>
+                1 Oportunidades <?= $guiaEtapa1 ? 'OK' : 'PENDENTE' ?> |
+                2 Pipeline <?= $guiaEtapa2 ? 'OK' : 'PENDENTE' ?> |
+                3 Proposta <?= $guiaEtapa3 ? 'OK' : 'PENDENTE' ?> |
+                4 Envio <?= $guiaEtapa4 ? 'OK' : 'PENDENTE' ?> |
+                5 Alertas <?= $guiaEtapa5 ? 'OK' : 'PENDENTE' ?>
+            </p>
+            <p>
+                <strong><?= htmlspecialchars($guiaProximoTitulo, ENT_QUOTES, 'UTF-8') ?></strong>
+                - <?= htmlspecialchars($guiaProximoDescricao, ENT_QUOTES, 'UTF-8') ?>
+                <a class="btn" href="<?= htmlspecialchars($wizardNextLink, ENT_QUOTES, 'UTF-8') ?>" style="margin-left: 6px;"><?= htmlspecialchars($guiaProximoAcao, ENT_QUOTES, 'UTF-8') ?></a>
+            </p>
+        </section>
 
         <section class="grid">
             <article class="card">
@@ -175,54 +270,56 @@ $isAdmin = in_array(strtoupper($perfilRaw), ['SUPER_ADMIN', 'ADMIN'], true);
                 <h3>Encerrados</h3>
                 <p><?= (int) ($resumo['encerrado'] ?? 0) ?></p>
             </article>
-            <article class="card">
-                <h3>Taxa de decisao</h3>
-                <p><?= number_format((float) ($resumo['taxa_decisao'] ?? 0), 1, ',', '.') ?>%</p>
-            </article>
-            <article class="card">
-                <h3>Taxa de conclusao</h3>
-                <p><?= number_format((float) ($resumo['taxa_conclusao'] ?? 0), 1, ',', '.') ?>%</p>
-            </article>
-            <article class="card">
-                <h3>Tarefas vencendo (48h)</h3>
-                <p><?= (int) ($resumo['tarefas_vencendo_48h'] ?? 0) ?></p>
-            </article>
-            <article class="card">
-                <h3>Tarefas vencidas</h3>
-                <p><?= (int) ($resumo['tarefas_vencidas'] ?? 0) ?></p>
-            </article>
-            <article class="card">
-                <h3>Conv. Analise -> Proposta</h3>
-                <p><?= number_format((float) ($resumo['taxa_analise_para_proposta'] ?? 0), 1, ',', '.') ?>%</p>
-            </article>
-            <article class="card">
-                <h3>Conv. Proposta -> Encerrado</h3>
-                <p><?= number_format((float) ($resumo['taxa_proposta_para_encerrado'] ?? 0), 1, ',', '.') ?>%</p>
-            </article>
-            <article class="card">
-                <h3>Propostas totais</h3>
-                <p><?= (int) ($resumo['propostas_total'] ?? 0) ?></p>
-            </article>
-            <article class="card">
-                <h3>Propostas em revisao</h3>
-                <p><?= (int) ($resumo['propostas_em_revisao'] ?? 0) ?></p>
-            </article>
-            <article class="card">
-                <h3>Propostas enviadas</h3>
-                <p><?= (int) ($resumo['propostas_enviadas'] ?? 0) ?></p>
-            </article>
-            <article class="card">
-                <h3>Resultados de propostas</h3>
-                <p><?= (int) ($resumo['propostas_resultados_total'] ?? 0) ?></p>
-            </article>
-            <article class="card">
-                <h3>Propostas vencedoras</h3>
-                <p><?= (int) ($resumo['propostas_vencedoras'] ?? 0) ?></p>
-            </article>
-            <article class="card">
-                <h3>Taxa sucesso propostas</h3>
-                <p><?= number_format((float) ($resumo['taxa_sucesso_propostas'] ?? 0), 1, ',', '.') ?>%</p>
-            </article>
+            <?php if (!$modoIniciante): ?>
+                <article class="card">
+                    <h3>Taxa de decisao</h3>
+                    <p><?= number_format((float) ($resumo['taxa_decisao'] ?? 0), 1, ',', '.') ?>%</p>
+                </article>
+                <article class="card">
+                    <h3>Taxa de conclusao</h3>
+                    <p><?= number_format((float) ($resumo['taxa_conclusao'] ?? 0), 1, ',', '.') ?>%</p>
+                </article>
+                <article class="card">
+                    <h3>Tarefas vencendo (48h)</h3>
+                    <p><?= (int) ($resumo['tarefas_vencendo_48h'] ?? 0) ?></p>
+                </article>
+                <article class="card">
+                    <h3>Tarefas vencidas</h3>
+                    <p><?= (int) ($resumo['tarefas_vencidas'] ?? 0) ?></p>
+                </article>
+                <article class="card">
+                    <h3>Conv. Analise -> Proposta</h3>
+                    <p><?= number_format((float) ($resumo['taxa_analise_para_proposta'] ?? 0), 1, ',', '.') ?>%</p>
+                </article>
+                <article class="card">
+                    <h3>Conv. Proposta -> Encerrado</h3>
+                    <p><?= number_format((float) ($resumo['taxa_proposta_para_encerrado'] ?? 0), 1, ',', '.') ?>%</p>
+                </article>
+                <article class="card">
+                    <h3>Propostas totais</h3>
+                    <p><?= (int) ($resumo['propostas_total'] ?? 0) ?></p>
+                </article>
+                <article class="card">
+                    <h3>Propostas em revisao</h3>
+                    <p><?= (int) ($resumo['propostas_em_revisao'] ?? 0) ?></p>
+                </article>
+                <article class="card">
+                    <h3>Propostas enviadas</h3>
+                    <p><?= (int) ($resumo['propostas_enviadas'] ?? 0) ?></p>
+                </article>
+                <article class="card">
+                    <h3>Resultados de propostas</h3>
+                    <p><?= (int) ($resumo['propostas_resultados_total'] ?? 0) ?></p>
+                </article>
+                <article class="card">
+                    <h3>Propostas vencedoras</h3>
+                    <p><?= (int) ($resumo['propostas_vencedoras'] ?? 0) ?></p>
+                </article>
+                <article class="card">
+                    <h3>Taxa sucesso propostas</h3>
+                    <p><?= number_format((float) ($resumo['taxa_sucesso_propostas'] ?? 0), 1, ',', '.') ?>%</p>
+                </article>
+            <?php endif; ?>
         </section>
 
         <section class="card" style="margin-top: 10px;">
@@ -252,7 +349,7 @@ $isAdmin = in_array(strtoupper($perfilRaw), ['SUPER_ADMIN', 'ADMIN'], true);
                                 <span class="badge badge-new">NOVO</span>
                             <?php endif; ?>
                             <span class="badge badge-type"><?= htmlspecialchars($rotuloTipo, ENT_QUOTES, 'UTF-8') ?></span>
-                            <a href="/propostas/<?= (int) ($alerta['proposta_id'] ?? 0) ?>">
+                            <a href="<?= htmlspecialchars($appendModo('/propostas/' . (int) ($alerta['proposta_id'] ?? 0)), ENT_QUOTES, 'UTF-8') ?>">
                                 Proposta #<?= (int) ($alerta['proposta_id'] ?? 0) ?>
                             </a>
                             - <?= htmlspecialchars((string) ($alerta['orgao_nome'] ?? '-'), ENT_QUOTES, 'UTF-8') ?>
@@ -295,6 +392,7 @@ $isAdmin = in_array(strtoupper($perfilRaw), ['SUPER_ADMIN', 'ADMIN'], true);
                     | SLA sugerido: <strong><?= number_format((float) ($orquestradorExecutivoResumo['sla_sugerido_horas'] ?? 0), 1, ',', '.') ?>h</strong>
                 </p>
 
+                <?php if (!$modoIniciante): ?>
                 <h4>Escalonamento por nivel</h4>
                 <?php if ($orquestradorExecutivoNivel === []): ?>
                     <p class="muted">Sem historico de escalonamento por nivel.</p>
@@ -518,8 +616,10 @@ $isAdmin = in_array(strtoupper($perfilRaw), ['SUPER_ADMIN', 'ADMIN'], true);
                         </tbody>
                     </table>
                 <?php endif; ?>
+                <?php endif; ?>
             <?php endif; ?>
         </section>
     </div>
+    <a class="wizard-next" href="<?= htmlspecialchars($wizardNextLink, ENT_QUOTES, 'UTF-8') ?>">Proxima etapa</a>
 </body>
 </html>

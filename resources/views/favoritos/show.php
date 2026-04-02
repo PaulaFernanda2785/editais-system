@@ -14,6 +14,27 @@ $usuariosResponsaveis = isset($usuariosResponsaveis) && is_array($usuariosRespon
 $proposta = isset($proposta) ? $proposta : null;
 $message = isset($message) ? (string) $message : null;
 
+if (isset($_GET['modo'])) {
+    $modoEntrada = strtolower(trim((string) $_GET['modo']));
+    if (in_array($modoEntrada, ['iniciante', 'normal'], true)) {
+        $_SESSION['ui_modo'] = $modoEntrada;
+    }
+}
+$modoIniciante = strtolower((string) ($_SESSION['ui_modo'] ?? 'normal')) === 'iniciante';
+$appendModo = static function (string $url) use ($modoIniciante): string {
+    if (!$modoIniciante || str_starts_with($url, '#')) {
+        return $url;
+    }
+
+    return $url . (str_contains($url, '?') ? '&' : '?') . 'modo=iniciante';
+};
+$pathAtual = strtok((string) ($_SERVER['REQUEST_URI'] ?? '/favoritos'), '?');
+if (!is_string($pathAtual) || trim($pathAtual) === '') {
+    $pathAtual = '/favoritos';
+}
+$toggleModoUrl = $pathAtual . '?modo=' . ($modoIniciante ? 'normal' : 'iniciante');
+$toggleModoLabel = $modoIniciante ? 'Modo normal' : 'Modo iniciante';
+
 if ($favorito === null) {
     echo 'Item do pipeline nao encontrado.';
     return;
@@ -38,6 +59,35 @@ $badgeTarefaClass = static function (?string $status): string {
         default => 'badge-tarefa-pendente',
     };
 };
+
+$fluxoPipelineTitulo = 'Passo atual: classificar e organizar checklist';
+$fluxoPipelineDescricao = 'Se este item for prioridade comercial, gere o rascunho de proposta.';
+$fluxoPipelineAcao = $proposta !== null ? 'Abrir proposta' : 'Gerar rascunho automatico';
+$fluxoPipelineLink = $proposta !== null
+    ? '/propostas/' . (int) ($proposta->id ?? 0)
+    : '#assistente-proposta';
+
+if ($proposta !== null) {
+    $statusProposta = strtoupper(trim((string) ($proposta->status ?? 'RASCUNHO')));
+    if ($statusProposta === 'RASCUNHO') {
+        $fluxoPipelineTitulo = 'Passo atual: proposta em rascunho';
+        $fluxoPipelineDescricao = 'Abra a proposta e solicite aprovacao para avancar no fluxo.';
+        $fluxoPipelineAcao = 'Abrir proposta';
+    } elseif ($statusProposta === 'EM_REVISAO') {
+        $fluxoPipelineTitulo = 'Passo atual: proposta em revisao';
+        $fluxoPipelineDescricao = 'A proposta aguarda decisao de aprovacao.';
+        $fluxoPipelineAcao = 'Abrir proposta';
+    } elseif ($statusProposta === 'APROVADA') {
+        $fluxoPipelineTitulo = 'Passo atual: proposta aprovada';
+        $fluxoPipelineDescricao = 'Registre a submissao para mover para ENVIADA.';
+        $fluxoPipelineAcao = 'Abrir proposta';
+    } elseif ($statusProposta === 'ENVIADA') {
+        $fluxoPipelineTitulo = 'Passo atual: proposta enviada';
+        $fluxoPipelineDescricao = 'Acompanhe resultado e alertas automaticos no dashboard.';
+        $fluxoPipelineAcao = 'Abrir proposta';
+    }
+}
+$wizardNextLink = $appendModo($fluxoPipelineLink);
 ?>
 <!doctype html>
 <html lang="pt-BR">
@@ -72,6 +122,20 @@ $badgeTarefaClass = static function (?string $status): string {
         .badge-tarefa-bloqueada { background: #fee2e2; color: #991b1b; }
         .muted { color: #475569; font-size: 13px; }
         .inline-form { display: grid; grid-template-columns: 1fr auto auto; gap: 6px; align-items: center; }
+        .wizard-next {
+            position: fixed;
+            right: 18px;
+            bottom: 18px;
+            z-index: 99;
+            border: 1px solid #00509d;
+            background: #00509d;
+            color: #fff;
+            text-decoration: none;
+            padding: 10px 14px;
+            border-radius: 999px;
+            font-weight: 700;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16);
+        }
     </style>
 </head>
 <body>
@@ -82,11 +146,12 @@ $badgeTarefaClass = static function (?string $status): string {
                 <p>Empresa: <strong><?= $empresaNome ?></strong> | Usuario: <strong><?= $usuarioNome ?></strong></p>
             </div>
             <div class="actions">
-                <a class="btn" href="/favoritos">Voltar ao pipeline</a>
-                <a class="btn" href="/oportunidades">Oportunidades</a>
-                <a class="btn" href="/propostas">Propostas</a>
+                <a class="btn" href="<?= htmlspecialchars($appendModo('/favoritos'), ENT_QUOTES, 'UTF-8') ?>">Voltar ao pipeline</a>
+                <a class="btn" href="<?= htmlspecialchars($appendModo('/oportunidades'), ENT_QUOTES, 'UTF-8') ?>">Oportunidades</a>
+                <a class="btn" href="<?= htmlspecialchars($appendModo('/propostas'), ENT_QUOTES, 'UTF-8') ?>">Propostas</a>
+                <a class="btn" href="<?= htmlspecialchars($toggleModoUrl, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($toggleModoLabel, ENT_QUOTES, 'UTF-8') ?></a>
                 <?php if (($favorito->correspondenciaId ?? null) !== null && (int) $favorito->correspondenciaId > 0): ?>
-                    <a class="btn" href="/oportunidades/<?= (int) $favorito->correspondenciaId ?>">Oportunidade origem</a>
+                    <a class="btn" href="<?= htmlspecialchars($appendModo('/oportunidades/' . (int) $favorito->correspondenciaId), ENT_QUOTES, 'UTF-8') ?>">Oportunidade origem</a>
                 <?php endif; ?>
             </div>
         </header>
@@ -94,6 +159,17 @@ $badgeTarefaClass = static function (?string $status): string {
         <?php if ($message !== null && $message !== ''): ?>
             <div class="msg"><?= htmlspecialchars($message, ENT_QUOTES, 'UTF-8') ?></div>
         <?php endif; ?>
+
+        <section class="panel">
+            <h3>Fluxo</h3>
+            <p><strong><?= htmlspecialchars($fluxoPipelineTitulo, ENT_QUOTES, 'UTF-8') ?></strong></p>
+            <p class="muted"><?= htmlspecialchars($fluxoPipelineDescricao, ENT_QUOTES, 'UTF-8') ?></p>
+            <?php if ($fluxoPipelineLink !== '#assistente-proposta'): ?>
+                <a class="btn" href="<?= htmlspecialchars($appendModo($fluxoPipelineLink), ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($fluxoPipelineAcao, ENT_QUOTES, 'UTF-8') ?></a>
+            <?php else: ?>
+                <a class="btn" href="#assistente-proposta"><?= htmlspecialchars($fluxoPipelineAcao, ENT_QUOTES, 'UTF-8') ?></a>
+            <?php endif; ?>
+        </section>
 
         <section class="panel grid">
             <article>
@@ -130,14 +206,16 @@ $badgeTarefaClass = static function (?string $status): string {
             </article>
         </section>
 
+        <?php if (!$modoIniciante): ?>
         <section class="panel">
             <h3>Recomendacao de decisao</h3>
             <p><strong><?= htmlspecialchars((string) ($recomendacao['nivel'] ?? '-'), ENT_QUOTES, 'UTF-8') ?></strong></p>
             <p><?= htmlspecialchars((string) ($recomendacao['descricao'] ?? '-'), ENT_QUOTES, 'UTF-8') ?></p>
             <p class="muted">Status sugerido: <?= htmlspecialchars((string) ($recomendacao['status_sugerido'] ?? '-'), ENT_QUOTES, 'UTF-8') ?></p>
         </section>
+        <?php endif; ?>
 
-        <section class="panel">
+        <section class="panel" id="assistente-proposta">
             <h3>Assistente de Proposta</h3>
             <?php if ($proposta !== null): ?>
                 <p>
@@ -150,18 +228,19 @@ $badgeTarefaClass = static function (?string $status): string {
             <?php endif; ?>
             <div class="actions">
                 <form method="POST" action="/favoritos/<?= (int) $favorito->id ?>/proposta/gerar">
-                    <input type="hidden" name="redirect_to" value="/favoritos/<?= (int) $favorito->id ?>">
+                    <input type="hidden" name="redirect_to" value="<?= htmlspecialchars($appendModo('/favoritos/' . (int) $favorito->id), ENT_QUOTES, 'UTF-8') ?>">
                     <input type="hidden" name="abrir_detalhe" value="1">
                     <button class="btn btn-primary" type="submit">
                         <?= $proposta !== null ? 'Regenerar rascunho' : 'Gerar rascunho automatico' ?>
                     </button>
                 </form>
                 <?php if ($proposta !== null): ?>
-                    <a class="btn" href="/propostas/<?= (int) $proposta->id ?>">Abrir proposta</a>
+                    <a class="btn" href="<?= htmlspecialchars($appendModo('/propostas/' . (int) $proposta->id), ENT_QUOTES, 'UTF-8') ?>">Abrir proposta</a>
                 <?php endif; ?>
             </div>
         </section>
 
+        <?php if (!$modoIniciante): ?>
         <section class="panel">
             <h3>Atualizar status e observacao</h3>
             <form method="POST" action="/favoritos/<?= (int) $favorito->id ?>/status">
@@ -284,6 +363,8 @@ $badgeTarefaClass = static function (?string $status): string {
                 </div>
             </form>
         </section>
+        <?php endif; ?>
     </div>
+    <a class="wizard-next" href="<?= htmlspecialchars($wizardNextLink, ENT_QUOTES, 'UTF-8') ?>">Proxima etapa</a>
 </body>
 </html>

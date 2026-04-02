@@ -17,6 +17,27 @@ $canaisSubmissao = isset($canaisSubmissao) && is_array($canaisSubmissao) ? $cana
 $situacoesResultado = isset($situacoesResultado) && is_array($situacoesResultado) ? $situacoesResultado : [];
 $message = isset($message) ? (string) $message : null;
 
+if (isset($_GET['modo'])) {
+    $modoEntrada = strtolower(trim((string) $_GET['modo']));
+    if (in_array($modoEntrada, ['iniciante', 'normal'], true)) {
+        $_SESSION['ui_modo'] = $modoEntrada;
+    }
+}
+$modoIniciante = strtolower((string) ($_SESSION['ui_modo'] ?? 'normal')) === 'iniciante';
+$appendModo = static function (string $url) use ($modoIniciante): string {
+    if (!$modoIniciante || str_starts_with($url, '#')) {
+        return $url;
+    }
+
+    return $url . (str_contains($url, '?') ? '&' : '?') . 'modo=iniciante';
+};
+$pathAtual = strtok((string) ($_SERVER['REQUEST_URI'] ?? '/propostas'), '?');
+if (!is_string($pathAtual) || trim($pathAtual) === '') {
+    $pathAtual = '/propostas';
+}
+$toggleModoUrl = $pathAtual . '?modo=' . ($modoIniciante ? 'normal' : 'iniciante');
+$toggleModoLabel = $modoIniciante ? 'Modo normal' : 'Modo iniciante';
+
 if ($proposta === null) {
     echo 'Proposta nao encontrada.';
     return;
@@ -65,6 +86,29 @@ $formatarDataHora = static function (?string $value): string {
 
 $dataSubmissaoDefault = date('Y-m-d\\TH:i');
 $dataResultadoDefault = date('Y-m-d\\TH:i');
+
+$fluxoPassoNumero = 1;
+$fluxoPassoTitulo = 'RASCUNHO';
+$fluxoPassoDescricao = 'Preencha os dados e solicite aprovacao.';
+$fluxoProximoPasso = 'Clique em "Solicitar aprovacao".';
+
+if ($statusAtual === 'EM_REVISAO') {
+    $fluxoPassoNumero = 2;
+    $fluxoPassoTitulo = 'EM_REVISAO';
+    $fluxoPassoDescricao = 'Aguardando decisao de aprovacao.';
+    $fluxoProximoPasso = 'Clique em "Registrar decisao".';
+} elseif ($statusAtual === 'APROVADA') {
+    $fluxoPassoNumero = 3;
+    $fluxoPassoTitulo = 'APROVADA';
+    $fluxoPassoDescricao = 'A proposta esta pronta para envio.';
+    $fluxoProximoPasso = 'Clique em "Registrar submissao".';
+} elseif ($statusAtual === 'ENVIADA') {
+    $fluxoPassoNumero = 4;
+    $fluxoPassoTitulo = 'ENVIADA';
+    $fluxoPassoDescricao = 'A proposta ja foi enviada e pode receber atualizacoes de resultado.';
+    $fluxoProximoPasso = 'Clique em "Registrar resultado" (EM_JULGAMENTO ou resultado final).';
+}
+$wizardNextLink = '#workflow';
 ?>
 <!doctype html>
 <html lang="pt-BR">
@@ -93,6 +137,20 @@ $dataResultadoDefault = date('Y-m-d\\TH:i');
         th, td { padding: 10px; border-bottom: 1px solid #e8edf5; text-align: left; vertical-align: top; }
         th { background: #f8fafc; }
         ul { margin: 8px 0 0 18px; padding: 0; }
+        .wizard-next {
+            position: fixed;
+            right: 18px;
+            bottom: 18px;
+            z-index: 99;
+            border: 1px solid #00509d;
+            background: #00509d;
+            color: #fff;
+            text-decoration: none;
+            padding: 10px 14px;
+            border-radius: 999px;
+            font-weight: 700;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16);
+        }
     </style>
 </head>
 <body>
@@ -103,9 +161,10 @@ $dataResultadoDefault = date('Y-m-d\\TH:i');
                 <p>Empresa: <strong><?= $empresaNome ?></strong> | Usuario: <strong><?= $usuarioNome ?></strong></p>
             </div>
             <div class="actions">
-                <a class="btn" href="/propostas">Voltar</a>
+                <a class="btn" href="<?= htmlspecialchars($appendModo('/propostas'), ENT_QUOTES, 'UTF-8') ?>">Voltar</a>
+                <a class="btn" href="<?= htmlspecialchars($toggleModoUrl, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($toggleModoLabel, ENT_QUOTES, 'UTF-8') ?></a>
                 <?php if ($favorito !== null): ?>
-                    <a class="btn" href="/favoritos/<?= (int) $favorito->id ?>">Pipeline</a>
+                    <a class="btn" href="<?= htmlspecialchars($appendModo('/favoritos/' . (int) $favorito->id), ENT_QUOTES, 'UTF-8') ?>">Pipeline</a>
                 <?php endif; ?>
             </div>
         </header>
@@ -113,6 +172,13 @@ $dataResultadoDefault = date('Y-m-d\\TH:i');
         <?php if ($message !== null && $message !== ''): ?>
             <div class="msg"><?= htmlspecialchars($message, ENT_QUOTES, 'UTF-8') ?></div>
         <?php endif; ?>
+
+        <section class="panel">
+            <h3>Fluxo</h3>
+            <p><strong>Etapa <?= $fluxoPassoNumero ?>/4 - <?= htmlspecialchars($fluxoPassoTitulo, ENT_QUOTES, 'UTF-8') ?></strong></p>
+            <p class="muted"><?= htmlspecialchars($fluxoPassoDescricao, ENT_QUOTES, 'UTF-8') ?></p>
+            <p class="muted">Proximo: <?= htmlspecialchars($fluxoProximoPasso, ENT_QUOTES, 'UTF-8') ?></p>
+        </section>
 
         <section class="panel grid">
             <article>
@@ -165,9 +231,9 @@ $dataResultadoDefault = date('Y-m-d\\TH:i');
             </div>
         </section>
 
-        <section class="panel">
-            <h3>Workflow de aprovacao e envio</h3>
-            <p class="muted">Fluxo controlado: RASCUNHO -> EM_REVISAO -> APROVADA -> ENVIADA.</p>
+        <section class="panel" id="workflow">
+            <h3>Proxima acao</h3>
+            <p class="muted">Fluxo: RASCUNHO -> EM_REVISAO -> APROVADA -> ENVIADA.</p>
 
             <?php if ($statusAtual === 'RASCUNHO'): ?>
                 <form method="POST" action="/propostas/<?= (int) $proposta->id ?>/solicitar-aprovacao">
@@ -291,6 +357,7 @@ $dataResultadoDefault = date('Y-m-d\\TH:i');
             <?php endif; ?>
         </section>
 
+        <?php if (!$modoIniciante): ?>
         <section class="panel">
             <h3>Edicao da proposta</h3>
             <form method="POST" action="/propostas/<?= (int) $proposta->id ?>">
@@ -482,6 +549,8 @@ $dataResultadoDefault = date('Y-m-d\\TH:i');
                 </ul>
             <?php endif; ?>
         </section>
+        <?php endif; ?>
     </div>
+    <a class="wizard-next" href="<?= htmlspecialchars($wizardNextLink, ENT_QUOTES, 'UTF-8') ?>">Proxima etapa</a>
 </body>
 </html>

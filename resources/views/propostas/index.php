@@ -18,6 +18,27 @@ $alertasResultado = isset($alertasResultado) && is_array($alertasResultado) ? $a
 $painelWinLoss = isset($painelWinLoss) && is_array($painelWinLoss) ? $painelWinLoss : [];
 $message = isset($message) ? (string) $message : null;
 
+if (isset($_GET['modo'])) {
+    $modoEntrada = strtolower(trim((string) $_GET['modo']));
+    if (in_array($modoEntrada, ['iniciante', 'normal'], true)) {
+        $_SESSION['ui_modo'] = $modoEntrada;
+    }
+}
+$modoIniciante = strtolower((string) ($_SESSION['ui_modo'] ?? 'normal')) === 'iniciante';
+$appendModo = static function (string $url) use ($modoIniciante): string {
+    if (!$modoIniciante || str_starts_with($url, '#')) {
+        return $url;
+    }
+
+    return $url . (str_contains($url, '?') ? '&' : '?') . 'modo=iniciante';
+};
+$pathAtual = strtok((string) ($_SERVER['REQUEST_URI'] ?? '/propostas'), '?');
+if (!is_string($pathAtual) || trim($pathAtual) === '') {
+    $pathAtual = '/propostas';
+}
+$toggleModoUrl = $pathAtual . '?modo=' . ($modoIniciante ? 'normal' : 'iniciante');
+$toggleModoLabel = $modoIniciante ? 'Modo normal' : 'Modo iniciante';
+
 $alertasSemResultado = isset($alertasResultado['sem_resultado']) && is_array($alertasResultado['sem_resultado'])
     ? $alertasResultado['sem_resultado']
     : [];
@@ -27,6 +48,38 @@ $alertasJulgamentoParado = isset($alertasResultado['julgamento_parado']) && is_a
 $configAlertas = isset($alertasResultado['config']) && is_array($alertasResultado['config']) ? $alertasResultado['config'] : [];
 $winLossOrgao = isset($painelWinLoss['por_orgao']) && is_array($painelWinLoss['por_orgao']) ? $painelWinLoss['por_orgao'] : [];
 $winLossModalidade = isset($painelWinLoss['por_modalidade']) && is_array($painelWinLoss['por_modalidade']) ? $painelWinLoss['por_modalidade'] : [];
+
+$resumoRascunho = (int) ($resumo['RASCUNHO'] ?? 0);
+$resumoRevisao = (int) ($resumo['EM_REVISAO'] ?? 0);
+$resumoAprovada = (int) ($resumo['APROVADA'] ?? 0);
+$resumoEnviada = (int) ($resumo['ENVIADA'] ?? 0);
+
+$fluxoPropostaTitulo = 'Fluxo pronto para resultado final.';
+$fluxoPropostaDescricao = 'As propostas enviadas ja podem receber resultado (parcial ou final).';
+$fluxoPropostaLink = '/propostas?status=ENVIADA';
+$fluxoPropostaAcao = 'Abrir propostas enviadas';
+if ($resumoRascunho > 0) {
+    $fluxoPropostaTitulo = 'Passo atual: RASCUNHO';
+    $fluxoPropostaDescricao = 'Abra a proposta e clique em "Solicitar aprovacao".';
+    $fluxoPropostaLink = '/propostas?status=RASCUNHO';
+    $fluxoPropostaAcao = 'Abrir rascunhos';
+} elseif ($resumoRevisao > 0) {
+    $fluxoPropostaTitulo = 'Passo atual: EM_REVISAO';
+    $fluxoPropostaDescricao = 'Abra a proposta e registre a decisao de aprovacao.';
+    $fluxoPropostaLink = '/propostas?status=EM_REVISAO';
+    $fluxoPropostaAcao = 'Abrir em revisao';
+} elseif ($resumoAprovada > 0) {
+    $fluxoPropostaTitulo = 'Passo atual: APROVADA';
+    $fluxoPropostaDescricao = 'Abra a proposta aprovada e clique em "Registrar submissao".';
+    $fluxoPropostaLink = '/propostas?status=APROVADA';
+    $fluxoPropostaAcao = 'Abrir aprovadas';
+} elseif ($resumoEnviada <= 0) {
+    $fluxoPropostaTitulo = 'Sem propostas no fluxo.';
+    $fluxoPropostaDescricao = 'Gere rascunhos a partir do pipeline para iniciar o processo.';
+    $fluxoPropostaLink = '/favoritos';
+    $fluxoPropostaAcao = 'Ir para pipeline';
+}
+$wizardNextLink = $appendModo($fluxoPropostaLink);
 
 $usuarioNome = htmlspecialchars((string) ($auth['nome'] ?? 'Usuario'), ENT_QUOTES, 'UTF-8');
 $empresaNome = htmlspecialchars((string) ($tenant['nome_fantasia'] ?? $tenant['razao_social'] ?? 'Empresa'), ENT_QUOTES, 'UTF-8');
@@ -38,9 +91,12 @@ $queryBase = [
     'per_page' => $perPage,
 ];
 
-$buildPageUrl = static function (int $targetPage, array $base): string {
+$buildPageUrl = static function (int $targetPage, array $base) use ($modoIniciante): string {
     $params = $base;
     $params['page'] = $targetPage;
+    if ($modoIniciante) {
+        $params['modo'] = 'iniciante';
+    }
     return '/propostas?' . http_build_query($params);
 };
 
@@ -100,6 +156,20 @@ $formatarDataHora = static function (?string $value): string {
         .badge-revisao { background: #ffedd5; color: #9a3412; }
         .badge-aprovada { background: #dcfce7; color: #166534; }
         .badge-enviada { background: #dbeafe; color: #1d4ed8; }
+        .wizard-next {
+            position: fixed;
+            right: 18px;
+            bottom: 18px;
+            z-index: 99;
+            border: 1px solid #00509d;
+            background: #00509d;
+            color: #fff;
+            text-decoration: none;
+            padding: 10px 14px;
+            border-radius: 999px;
+            font-weight: 700;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16);
+        }
     </style>
 </head>
 <body>
@@ -110,9 +180,10 @@ $formatarDataHora = static function (?string $value): string {
                 <p>Empresa: <strong><?= $empresaNome ?></strong> | Usuario: <strong><?= $usuarioNome ?></strong></p>
             </div>
             <div class="actions">
-                <a class="btn" href="/dashboard">Dashboard</a>
-                <a class="btn" href="/favoritos">Pipeline</a>
-                <a class="btn" href="/oportunidades">Oportunidades</a>
+                <a class="btn" href="<?= htmlspecialchars($appendModo('/dashboard'), ENT_QUOTES, 'UTF-8') ?>">Dashboard</a>
+                <a class="btn" href="<?= htmlspecialchars($appendModo('/favoritos'), ENT_QUOTES, 'UTF-8') ?>">Pipeline</a>
+                <a class="btn" href="<?= htmlspecialchars($appendModo('/oportunidades'), ENT_QUOTES, 'UTF-8') ?>">Oportunidades</a>
+                <a class="btn" href="<?= htmlspecialchars($toggleModoUrl, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($toggleModoLabel, ENT_QUOTES, 'UTF-8') ?></a>
                 <a class="btn" href="/logout">Sair</a>
             </div>
         </header>
@@ -120,6 +191,14 @@ $formatarDataHora = static function (?string $value): string {
         <?php if ($message !== null && $message !== ''): ?>
             <div class="msg"><?= htmlspecialchars($message, ENT_QUOTES, 'UTF-8') ?></div>
         <?php endif; ?>
+
+        <section class="panel">
+            <h3>Fluxo</h3>
+            <p><strong><?= htmlspecialchars($fluxoPropostaTitulo, ENT_QUOTES, 'UTF-8') ?></strong></p>
+            <p class="muted"><?= htmlspecialchars($fluxoPropostaDescricao, ENT_QUOTES, 'UTF-8') ?></p>
+            <p class="muted">Etapas: RASCUNHO -> EM_REVISAO -> APROVADA -> ENVIADA -> RESULTADO.</p>
+            <a class="btn" href="<?= htmlspecialchars($appendModo($fluxoPropostaLink), ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($fluxoPropostaAcao, ENT_QUOTES, 'UTF-8') ?></a>
+        </section>
 
         <section class="panel">
             <h3>Resumo</h3>
@@ -135,8 +214,9 @@ $formatarDataHora = static function (?string $value): string {
             </div>
         </section>
 
+        <?php if (!$modoIniciante): ?>
         <section class="panel">
-            <h3>Alertas automáticos de resultado/julgamento</h3>
+            <h3>Alertas automaticos de resultado/julgamento</h3>
             <p class="muted">
                 Sem resultado apos <?= (int) ($configAlertas['dias_sem_resultado'] ?? 7) ?> dias de envio
                 e julgamento sem atualizacao apos <?= (int) ($configAlertas['dias_julgamento_parado'] ?? 10) ?> dias.
@@ -243,7 +323,9 @@ $formatarDataHora = static function (?string $value): string {
                 </article>
             </div>
         </section>
+        <?php endif; ?>
 
+        <?php if (!$modoIniciante): ?>
         <section class="panel">
             <form method="GET" action="/propostas">
                 <div class="grid">
@@ -283,10 +365,11 @@ $formatarDataHora = static function (?string $value): string {
                 </div>
                 <div style="margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap;">
                     <button class="btn btn-primary" type="submit">Filtrar</button>
-                    <a class="btn" href="/propostas">Limpar filtros</a>
+                    <a class="btn" href="<?= htmlspecialchars($appendModo('/propostas'), ENT_QUOTES, 'UTF-8') ?>">Limpar filtros</a>
                 </div>
             </form>
         </section>
+        <?php endif; ?>
 
         <section class="panel">
             <h3>Propostas</h3>
@@ -331,8 +414,8 @@ $formatarDataHora = static function (?string $value): string {
                             </td>
                             <td>
                                 <div class="actions">
-                                    <a class="btn" href="/propostas/<?= (int) $item->id ?>">Abrir</a>
-                                    <a class="btn" href="/favoritos/<?= (int) $item->favoritoId ?>">Pipeline</a>
+                                    <a class="btn" href="<?= htmlspecialchars($appendModo('/propostas/' . (int) $item->id), ENT_QUOTES, 'UTF-8') ?>">Abrir</a>
+                                    <a class="btn" href="<?= htmlspecialchars($appendModo('/favoritos/' . (int) $item->favoritoId), ENT_QUOTES, 'UTF-8') ?>">Pipeline</a>
                                 </div>
                             </td>
                         </tr>
@@ -364,5 +447,6 @@ $formatarDataHora = static function (?string $value): string {
             </div>
         </section>
     </div>
+    <a class="wizard-next" href="<?= htmlspecialchars($wizardNextLink, ENT_QUOTES, 'UTF-8') ?>">Proxima etapa</a>
 </body>
 </html>
