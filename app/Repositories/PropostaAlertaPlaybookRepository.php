@@ -438,15 +438,16 @@ class PropostaAlertaPlaybookRepository
             SET
                 status = \'ESCALADO\',
                 escalonado_em = NOW(),
-                escalonamento_nivel = :escalonamento_nivel,
+                escalonamento_nivel = :escalonamento_nivel_novo,
                 escalonamento_motivo = :escalonamento_motivo,
                 atualizado_em = NOW()
             WHERE id = :id
               AND empresa_id = :empresa_id
-              AND escalonamento_nivel < :escalonamento_nivel'
+              AND escalonamento_nivel < :escalonamento_nivel_limite'
         );
         $stmt->execute([
-            'escalonamento_nivel' => $nivel,
+            'escalonamento_nivel_novo' => $nivel,
+            'escalonamento_nivel_limite' => $nivel,
             'escalonamento_motivo' => $this->truncate($motivo, 255),
             'id' => $playbookId,
             'empresa_id' => $empresaId,
